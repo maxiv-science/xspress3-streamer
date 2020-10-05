@@ -46,7 +46,8 @@ class Xspress3(object):
     def __init__(self, ncards=1, maxframes=-1, baseip=None,
                  baseport=-1, basemac=None, nchan=-1, create_mod=-1,
                  name=None, debug=-1, cardindex=-1,
-                 header_path='/opt/xspress3-sdk/include'):
+                 header_path='/opt/xspress3-sdk/include',
+                 active_channels=None):
         """
         The C constructor takes -1 and NULL for defaults everywhere
         for ints/*chars, respectively.
@@ -67,6 +68,9 @@ class Xspress3(object):
             self.XSP3_ITFG_GAP_MODE_200NS: 200-9,
             self.XSP3_ITFG_GAP_MODE_500NS: 500e-9,
             self.XSP3_ITFG_GAP_MODE_1US: 1e-6,}[self._gap_mode]
+        if active_channels is None:
+            active_channels = list(range(self.num_chan))
+        self.active_channels = active_channels
 
     def check(self, result):
         if result == self.XSP3_OK:
@@ -173,6 +177,12 @@ class Xspress3(object):
                                 starting_energy, aux, starting_frame, n_energies,
                                 num_aux, n_frames))
         return np.frombuffer(buff, dtype=np.uint32).reshape((n_energies, n_frames))
+
+    def read(self, **kwargs):
+        data = []
+        for ch in sorted(self.active_channels):
+            data.append(self.read_channel(ch, **kwargs))
+        return data
 
     def stop(self, card=0):
         self.check(libxspress3.xsp3_histogram_stop(self.handle, card))
