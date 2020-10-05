@@ -102,7 +102,7 @@ class Xspress3(object):
         """
         Shut down.
         """
-        self.checkl(libxspress3.xsp3_close(self.handle))
+        self.check(libxspress3.xsp3_close(self.handle))
 
     @property
     def revision(self):
