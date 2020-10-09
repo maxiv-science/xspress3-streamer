@@ -46,7 +46,7 @@ class Xspress3(object):
                  baseport=-1, basemac=None, nchan=-1, create_mod=-1,
                  name=None, debug=-1, cardindex=-1,
                  header_path='/opt/xspress3-sdk/include',
-                 active_channels=None):
+                 config_path='/home/xspress3/settings',):
         """
         The C constructor takes -1 and NULL for defaults everywhere
         for ints/*chars, respectively.
@@ -54,6 +54,8 @@ class Xspress3(object):
         baseip = baseip.encode() if baseip is not None else None
         baseip = basemac.encode() if basemac is not None else None
         name = name.encode() if name is not None else None
+        if ncards > 1:
+            raise Exception('More than one card isn''t supported')
         handle = libxspress3.xsp3_config(ncards, maxframes, baseip, baseport,
                                          basemac, nchan, int(create_mod), name,
                                          int(debug), cardindex)
@@ -67,11 +69,12 @@ class Xspress3(object):
             self.XSP3_ITFG_GAP_MODE_200NS: 200-9,
             self.XSP3_ITFG_GAP_MODE_500NS: 500e-9,
             self.XSP3_ITFG_GAP_MODE_1US: 1e-6,}[self._gap_mode]
-        if active_channels is None:
-            active_channels = list(range(self.num_chan))
-        self.active_channels = active_channels
         self.check(libxspress3.xsp3_set_run_flags(self.handle,
                     self.XSP3_RUN_FLAGS_HIST | self.XSP3_RUN_FLAGS_SCALERS))
+        self.check(libxspress3.xsp3_clocks_setup(self.handle, 0, 
+                        self.XSP3_CLK_SRC_XTAL,
+                        self.XSP3_CLK_FLAGS_MASTER|self.XSP3_CLK_FLAGS_NO_DITHER, 0))
+        self.check(libxspress3.xsp3_restore_settings(self.handle, config_path.encode('ascii'), 0))
 
     def check(self, result):
         if result == self.XSP3_OK:
@@ -140,6 +143,9 @@ class Xspress3(object):
         hw_trig:    (bool) whether to expect HW triggers
         card:       (int) which card to use
         """
+
+        fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)
+        print('Can fit %u frames' % fit_frames)
         self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
         self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, n_frames))
         cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * 80e6)) # time in 80 MHz clock cycles
@@ -183,9 +189,9 @@ class Xspress3(object):
         shape = (n_energies, n_channels, n_frames)
         Buff = ctypes.c_uint32 * (np.prod(shape))
         buff = Buff()
-        self.check(libxspress3.xsp3_histogram_read4d(self.handle, buff,
-                                starting_energy, aux, starting_channel,
-                                starting_frame, n_energies, n_aux,
+        self.check(libxspress3.xsp3_histogram_read3d(self.handle, buff,
+                                starting_energy, starting_channel,
+                                starting_frame, n_energies,
                                 n_channels, n_frames))
         # no memory copied -these calls take 40-50 us for a single
         # frame and 60-70 us for 1000 frames.

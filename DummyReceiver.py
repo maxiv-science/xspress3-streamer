@@ -12,16 +12,16 @@ class Receiver(object):
 
     def run(self):
         plt.figure()
-        plt.gcf().suptitle('channel 0')
         while True:
             meta = self.sock.recv_json()
             print(meta)
             if meta['htype'] == 'image':
                 buff = self.sock.recv()
                 m, n = meta['shape'][:2]
-                frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
+                frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n), order='F')
                 plt.gca().clear()
-                plt.plot(frame[0,:])
+                plt.plot(frame)
+                plt.axvline(640, linestyle='--', color='k')
                 plt.pause(.01)
                 print(frame.shape, frame.dtype)
 
