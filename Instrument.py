@@ -5,10 +5,9 @@ Limitations:
 * The device is not operated in circular buffer mode, so there's a memory
   limit to the number of frames which can be recorded in one go, typically
   16384 frames if the full energy axis is used.
-* ROI:s are not implemented (yet).
-* Currently no scaler or auxiliary data is taken care of.
+* ROI:s and summed windows are not implemented (yet).
+* Currently no auxiliary dimensions are taken care of.
 * Productively using multi-card setups would require additional timing setup.
-* Dead time correction is not handled (but could be implemented).
 """
 
 import os, sys, time
@@ -71,6 +70,8 @@ class Xspress3(object):
         if active_channels is None:
             active_channels = list(range(self.num_chan))
         self.active_channels = active_channels
+        self.check(libxspress3.xsp3_set_run_flags(self.handle,
+                    self.XSP3_RUN_FLAGS_HIST | self.XSP3_RUN_FLAGS_SCALERS))
 
     def check(self, result):
         if result == self.XSP3_OK:
@@ -163,26 +164,76 @@ class Xspress3(object):
         self.check(libxspress3.xsp3_histogram_continue(self.handle, card))
         self.check(libxspress3.xsp3_histogram_pause(self.handle, card))
 
-    def read_channel(self, channel, starting_frame=0, n_frames=None,
-                     starting_energy=0, n_energies=None):
-        # we're ignoring aux per the limitations above
-        aux, num_aux = 0, 1
+    def read_hist(self, starting_frame=0, n_frames=None,
+                     starting_energy=0, n_energies=None,
+                     starting_channel=None, n_channels=None):
+        """
+        Reads histogram data for some cuboid in the
+        (frames, energy bins, channels) space. The default is to
+        read everything.
+        """
+        # we're ignoring aux dimensions per the limitations above
+        aux, n_aux = 0, 1
         if n_energies is None:
             n_energies = self.bins_per_mca
         if n_frames is None:
             n_frames = self.nframes_processed
-        Buff = ctypes.c_uint32 * (n_energies * n_frames)
+        if n_channels is None:
+            n_channels = self.num_chan
+        shape = (n_energies, n_channels, n_frames)
+        Buff = ctypes.c_uint32 * (np.prod(shape))
         buff = Buff()
-        self.check(libxspress3.xsp3_histogram_read_chan(self.handle, buff, channel,
-                                starting_energy, aux, starting_frame, n_energies,
-                                num_aux, n_frames))
-        return np.frombuffer(buff, dtype=np.uint32).reshape((n_energies, n_frames))
+        self.check(libxspress3.xsp3_histogram_read4d(self.handle, buff,
+                                starting_energy, aux, starting_channel,
+                                starting_frame, n_energies, n_aux,
+                                n_channels, n_frames))
+        # no memory copied -these calls take 40-50 us for a single
+        # frame and 60-70 us for 1000 frames.
+        arr = np.frombuffer(buff, dtype=ctypes.c_uint32)
+        arr = arr.reshape(shape)
+        return arr
 
-    def read(self, **kwargs):
-        data = []
-        for ch in sorted(self.active_channels):
-            data.append(self.read_channel(ch, **kwargs))
-        return data
+    def read_scalars_raw(self, starting_frame, n_frames):
+        """
+        Reads the scalars and returns the raw flat buffer.
+        """
+        first_scalar, n_scalars = 0, xsp.XSP3_SW_NUM_SCALERS
+        first_channel, n_channels = 0, self.num_chan
+        Buff = ctypes.c_uint32 * (n_scalars * n_channels * n_frames)
+        buff = Buff()
+        self.check(libxspress3.xsp3_scaler_read(self.handle, buff,
+                                first_scalar, first_channel, starting_frame,
+                                n_scalars, n_channels, n_frames))
+        return buff
+
+    def read_scalars(self, starting_frame=0, n_frames=None):
+        """
+        Reads recorded scalars and returns a reasonably shaped array.
+        Indexing goes as (frame, channel, scalar).
+        """
+        if n_frames is None:
+            n_frames = self.nframes_processed
+        buff = self.read_scalars_raw(starting_frame, n_frames)
+        shape = (n_frames, self.num_chan, self.XSP3_SW_NUM_SCALERS)
+        ## note: both the frombuffer and the reshape take a lot of time (ms)
+        return np.frombuffer(buff, dtype=np.uint32).reshape(shape)
+
+    def calculate_dtc(self, starting_frame=0, n_frames=None):
+        """
+        Calculate dead time correction factor and estimated total input counts
+        from the acquired scalar values. Indexing goes as (frame, channel).
+        """
+        if n_frames is None:
+            n_frames = self.nframes_processed
+        buff = self.read_scalars_raw(starting_frame, n_frames)
+        Array = ctypes.c_double * n_frames * self.num_chan
+        dtc_params = Array()
+        total_input_counts = Array()
+        libxspress3.xsp3_calculateDeadtimeCorrectionFactors(self.handle, buff,
+                        dtc_params, total_input_counts, n_frames, 0, self.num_chan)
+        dtc = np.frombuffer(dtc_params, dtype=ctypes.c_double).reshape((n_frames, self.num_chan))
+        i0 = np.frombuffer(total_input_counts, dtype=ctypes.c_double).reshape((n_frames, self.num_chan))
+        return dtc, i0
 
     def stop(self, card=0):
         self.check(libxspress3.xsp3_histogram_stop(self.handle, card))
@@ -196,6 +247,7 @@ class Xspress3(object):
     def nframes_processed(self):
         return libxspress3.xsp3_scaler_check_progress(0)
 
+
 if __name__ == '__main__':
     xsp = Xspress3()
     N = 5
@@ -206,8 +258,6 @@ if __name__ == '__main__':
         print('have %u frames...'%xsp.nframes_processed)
         time.sleep(.05)
     print('done! here the data from channel 0...')
-    data = xsp.read_channel(0)
+    data = xsp.read_hist()
     print(data)
     print('shape %s'%(data.shape,))
-
-

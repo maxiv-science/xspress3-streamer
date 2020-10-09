@@ -40,10 +40,7 @@ class Streamer(Thread):
             # handle incoming data - only sleep if there's none
             available_frames = self.instrument.nframes_processed
             if (available_frames > sent_frames) and not stopped:
-                data = self.instrument.read(starting_frame=sent_frames,
-                                            n_frames=1)
-                # oops a copy... needed since the data are read per-channel
-                data = np.array(data) # Clemens will not be happy...
+                data = self.instrument.read_hist(starting_frame=sent_frames, n_frames=1)
                 print('sending data (%s) because available=%u and sent=%u'%(data.shape, available_frames, sent_frames))
                 self.sock.send_json({'htype': 'image',
                                      'frame': sent_frames,
@@ -71,3 +68,5 @@ if __name__ == '__main__':
     s.q.put('start fakefile.h5')
     time.sleep(5)
     s.q.put('stop')
+    s.q.put('kill')
+
