@@ -5,7 +5,7 @@ Limitations:
 * The device is not operated in circular buffer mode, so there's a memory
   limit to the number of frames which can be recorded in one go, typically
   16384 frames if the full energy axis is used.
-* ROI:s and summed windows are not implemented (yet).
+* ROI:s (cropping the data at an eary stage) are not implemented yet.
 * Currently no auxiliary dimensions are taken care of.
 * Productively using multi-card setups would require additional timing setup.
 """
@@ -164,7 +164,7 @@ class Xspress3(object):
         self.check(libxspress3.xsp3_histogram_continue(self.handle, card))
         self.check(libxspress3.xsp3_histogram_pause(self.handle, card))
 
-    def read_hist(self, starting_frame=0, n_frames=None,
+    def read_hist_data(self, starting_frame=0, n_frames=None,
                      starting_energy=0, n_energies=None,
                      starting_channel=None, n_channels=None):
         """
@@ -206,7 +206,7 @@ class Xspress3(object):
                                 n_scalars, n_channels, n_frames))
         return buff
 
-    def read_scalars(self, starting_frame=0, n_frames=None):
+    def read_scalar_data(self, starting_frame=0, n_frames=None):
         """
         Reads recorded scalars and returns a reasonably shaped array.
         Indexing goes as (frame, channel, scalar).
@@ -215,13 +215,22 @@ class Xspress3(object):
             n_frames = self.nframes_processed
         buff = self.read_scalars_raw(starting_frame, n_frames)
         shape = (n_frames, self.num_chan, self.XSP3_SW_NUM_SCALERS)
-        ## note: both the frombuffer and the reshape take a lot of time (ms)
-        return np.frombuffer(buff, dtype=np.uint32).reshape(shape)
+        return np.frombuffer(buff, dtype=ctypes.c_uint32).reshape(shape)
+
+    def read_window_data(self, *args, **kwargs):
+        """
+        Picks out the in-window counter data from the scalars. Gets and
+        converts the scalar buffer again, so use read_scalar_data if you
+        want to get all the numbers in one go.
+        """
+        scalars = self.read_scalar_data(*args, **kwargs)
+        return scalars[:, :, 5:7]
 
     def calculate_dtc(self, starting_frame=0, n_frames=None):
         """
         Calculate dead time correction factor and estimated total input counts
-        from the acquired scalar values. Indexing goes as (frame, channel).
+        from the acquired scalar values. Indexing goes as (frame, channel). This
+        is done on the raw buffer with an SDK call.
         """
         if n_frames is None:
             n_frames = self.nframes_processed
@@ -234,6 +243,26 @@ class Xspress3(object):
         dtc = np.frombuffer(dtc_params, dtype=ctypes.c_double).reshape((n_frames, self.num_chan))
         i0 = np.frombuffer(total_input_counts, dtype=ctypes.c_double).reshape((n_frames, self.num_chan))
         return dtc, i0
+
+    def set_window(self, channel=-1, low=0, high=None, window=0):
+        """
+        Set the hardware in-window counter to integrate over a specific
+        energy range. `window` is the counter number (0 or 1). The limits
+        are specified in raw energy bins and don't depend on any roi
+        settings. If no channel number is given, the setting is applied
+        to all channels.
+        """
+        if high is None:
+            high = self.bins_per_mca-1
+        self.check(libxspress3.xsp3_set_window(self.handle, channel,
+                                    window, low, high))
+
+    def get_window(self, channel, window=0):
+        low = ctypes.pointer(ctypes.c_uint32())
+        high = ctypes.pointer(ctypes.c_uint32())
+        self.check(libxspress3.xsp3_get_window(self.handle, channel,
+                                    window, low, high))
+        return low.contents.value, high.contents.value
 
     def stop(self, card=0):
         self.check(libxspress3.xsp3_histogram_stop(self.handle, card))
@@ -258,6 +287,6 @@ if __name__ == '__main__':
         print('have %u frames...'%xsp.nframes_processed)
         time.sleep(.05)
     print('done! here the data from channel 0...')
-    data = xsp.read_hist()
+    data = xsp.read_hist_data()
     print(data)
     print('shape %s'%(data.shape,))

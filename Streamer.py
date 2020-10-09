@@ -40,7 +40,7 @@ class Streamer(Thread):
             # handle incoming data - only sleep if there's none
             available_frames = self.instrument.nframes_processed
             if (available_frames > sent_frames) and not stopped:
-                data = self.instrument.read_hist(starting_frame=sent_frames, n_frames=1)
+                data = self.instrument.read_hist_data(starting_frame=sent_frames, n_frames=1)
                 print('sending data (%s) because available=%u and sent=%u'%(data.shape, available_frames, sent_frames))
                 self.sock.send_json({'htype': 'image',
                                      'frame': sent_frames,
