@@ -2,7 +2,7 @@ from threading import Thread
 from queue import Queue, Empty
 import zmq
 import time
-from Instrument import Xspress3
+from .Instrument import Xspress3
 import numpy as np
 
 class Streamer(Thread):

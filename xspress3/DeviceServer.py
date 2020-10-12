@@ -1,7 +1,7 @@
 from tango import DevState
 from tango.server import Device, attribute, command, device_property
-from Streamer import Streamer
-from Instrument import Xspress3
+from .Streamer import Streamer
+from .Instrument import Xspress3
 
 
 class StandardDetector(object):
@@ -157,6 +157,9 @@ class Xspress3DS(Device, StandardDetector):
             if done == due:
                 self.set_state(DevState.STANDBY)
 
+def main():
+    Xspress3DS.run_server()
         
 if __name__ == '__main__':
-    Xspress3DS.run_server()
+    main()
+
