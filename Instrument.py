@@ -51,16 +51,17 @@ class Xspress3(object):
         The C constructor takes -1 and NULL for defaults everywhere
         for ints/*chars, respectively.
         """
-        baseip = baseip.encode() if baseip is not None else None
-        baseip = basemac.encode() if basemac is not None else None
-        name = name.encode() if name is not None else None
+        baseip = baseip.encode() if baseip else None # converts 0 and "" to None
+        basemac = basemac.encode() if basemac else None
+        name = name.encode() if name else None
         if ncards > 1:
             raise Exception('More than one card isn''t supported')
         handle = libxspress3.xsp3_config(ncards, maxframes, baseip, baseport,
                                          basemac, nchan, int(create_mod), name,
                                          int(debug), cardindex)
         if handle < 0:
-            raise Exception('Failed to configure the Xspress3:\n*** %s ***' % self.error())
+            raise Exception('Failed to configure the Xspress3 (code %s):\n*** %s ***' %
+                                (ERROR_LOOKUP[handle], self.error()))
         self.handle = handle
         self._parse_headers(header_path)
         self._gap_mode = self.XSP3_ITFG_GAP_MODE_25NS

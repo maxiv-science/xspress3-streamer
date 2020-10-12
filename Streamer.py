@@ -33,6 +33,7 @@ class Streamer(Thread):
                     stopped = True
                     self.sock.send_json({'htype': 'series_end'})
                 elif cmd == 'kill':
+                    print('Streamer got the kill message. Going down!')
                     killed = True
             except Empty:
                 pass
