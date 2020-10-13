@@ -204,7 +204,7 @@ class Xspress3(object):
         """
         Reads the scalars and returns the raw flat buffer.
         """
-        first_scalar, n_scalars = 0, xsp.XSP3_SW_NUM_SCALERS
+        first_scalar, n_scalars = 0, self.XSP3_SW_NUM_SCALERS
         first_channel, n_channels = 0, self.num_chan
         Buff = ctypes.c_uint32 * (n_scalars * n_channels * n_frames)
         buff = Buff()

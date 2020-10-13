@@ -1,8 +1,15 @@
 from tango import DevState
 from tango.server import Device, attribute, command, device_property
-from .Streamer import Streamer
-from .Instrument import Xspress3
+from threading import Thread
 
+if __name__ == '__main__':
+    from xspress3.Streamer import Streamer
+    from xspress3.Instrument import Xspress3
+    from xspress3.Receivers import WritingReceiver
+else:
+    from .Streamer import Streamer
+    from .Instrument import Xspress3
+    from .Receivers import WritingReceiver
 
 class StandardDetector(object):
     """
@@ -77,7 +84,8 @@ class Xspress3DS(Device, StandardDetector):
     HeaderPath = device_property(dtype=str, default_value='/opt/xspress3-sdk/include', doc='Path to the SDK header files, for extracting #define:s.')
     Name = device_property(dtype=str, default_value='', doc='Xspress3 name, empty for default.')
     ConfigPath = device_property(dtype=str, default_value='/home/xspress3/settings', doc='Path to the xspress3 calibration files.')
-    StreamerPort = device_property(dtype=int, default_value=9999, doc='Port which the Streamer should use.')
+    StreamerPort = device_property(dtype=int, default_value=9999, doc='Port which the Streamer should use for data.')
+    MonitorPort = device_property(dtype=int, default_value=9998, doc='Port which the Streamer should use for monitoring.')
     BaseIP = device_property(dtype=str, default_value='', doc='IP from which to start counting.')
     BasePort = device_property(dtype=int, default_value=-1, doc='Port number from which to start counting.')
     BaseMAC = device_property(dtype=str, default_value='', doc='MAC from which to start counting.')
@@ -86,6 +94,7 @@ class Xspress3DS(Device, StandardDetector):
         Device.__init__(self, cl, name)
         StandardDetector.__init__(self)
         #self._latencytime = self.ReadoutTime  #### how the hell do you get self-attributes?!
+        self._write_hdf5 = True
                
     def init_device(self):
         self.set_state(DevState.INIT)
@@ -97,7 +106,7 @@ class Xspress3DS(Device, StandardDetector):
                          baseport=self.BasePort,
                          name=self.Name, header_path=self.HeaderPath,
                          config_path=self.ConfigPath)
-        self.streamer = Streamer(instrument=instr, port=self.StreamerPort)
+        self.streamer = Streamer(instrument=instr, data_port=self.StreamerPort, monitor_port=self.MonitorPort)
         self.streamer.start()
         self.set_state(DevState.STANDBY)
 
@@ -105,6 +114,14 @@ class Xspress3DS(Device, StandardDetector):
         print('Killing and joining the streamer...')
         self.streamer.q.put('kill')
         self.streamer.join()
+
+    @attribute(dtype=bool, doc="The device can optionally receive its own stream and write it to hdf5.")
+    def WriteHdf5(self):
+        return self._write_hdf5
+
+    @WriteHdf5.setter
+    def WriteHdf5(self, val):
+        self._write_hdf5 = val
 
     @attribute(dtype=float, format='%.2e')
     def ReadoutTime(self):
@@ -128,15 +145,20 @@ class Xspress3DS(Device, StandardDetector):
     @command
     def Arm(self):
         self.set_state(DevState.RUNNING)
+        if self._write_hdf5:
+            self.hdf_writer = WritingReceiver(host='localhost', port=self.StreamerPort)
+            self.hdf_thread = Thread(target=self.hdf_writer.run)
+            self.hdf_thread.start()
         self._swtrigs = 0
+        nframes = self._nframespertrigger * self._ntriggers
         self.streamer.instrument.acquire_frames(
             frame_time=self._exposuretime-self._latencytime,
-            n_frames=self._nframespertrigger*self._ntriggers,
+            n_frames=nframes,
             n_trig=self._ntriggers,
             hw_trig=(self._triggermode=='EXTERNAL'),
             card=0,)
         if self._destinationfilename:
-            self.streamer.q.put('start %s' % self._destinationfilename)
+            self.streamer.q.put('start %s %u' % (self._destinationfilename, nframes))
 
     @command
     def SoftwareTrigger(self):
@@ -162,4 +184,3 @@ def main():
         
 if __name__ == '__main__':
     main()
-
