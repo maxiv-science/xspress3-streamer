@@ -23,7 +23,8 @@ class Streamer(Thread):
         killed = False
         sent_frames = 0
         stopped = True
-        data = np.zeros((2,2))
+        sent_last_to_monitor = False
+        data = np.zeros((2,2), dtype='uint32')
         while not killed:
             # handle incoming commands - no block or timeout
             try:
@@ -46,15 +47,19 @@ class Streamer(Thread):
                 pass
 
             # check for requests on the monitor port
-            try:
-                msg = self.monitor_sock.recv(flags=zmq.NOBLOCK)
-                print('#########################Message received: "%s". Sending an image.' % msg)
-                self.monitor_sock.send_json({'htype': 'image',
-                                             'frame': sent_frames,
-                                             'shape': (data.shape[1], data.shape[0])})
-                self.monitor_sock.send(data, copy=False)
-            except zmq.ZMQError:
-                pass
+            if not sent_last_to_monitor:
+                try:
+                    msg = self.monitor_sock.recv_string(flags=zmq.NOBLOCK)
+                    sent_last_to_monitor = True
+                    print('Message on the monitoring port: "%s". Sending an image.' % msg)
+                    dct = {'htype': 'image',
+                           'frame': sent_frames,
+                           'type': 'uint32',
+                           'shape': (data.shape[1], data.shape[0])}
+                    self.monitor_sock.send_json(dct, flags=zmq.SNDMORE)
+                    self.monitor_sock.send(data)
+                except zmq.ZMQError:
+                    pass
 
             # handle incoming data - only sleep if there's none
             available_frames = self.instrument.nframes_processed
@@ -69,7 +74,7 @@ class Streamer(Thread):
                                      'frame': sent_frames,
                                      'shape': (data.shape[1], data.shape[0]),
                                      'type': 'uint32',
-                                     'compression': 'none'}, flags=zmq.SNDMORE)
+                                     'compression': 'none'})
                 # then send the histogram image - super fast with buffers
                 self.data_sock.send(data, copy=False)
                 # then send the additional scalar info - a bit stupid to
@@ -78,6 +83,7 @@ class Streamer(Thread):
                                       'estimated_total_counts': i0[0],
                                       'scalars': scalars[0]})
                 sent_frames += 1
+                sent_last_to_monitor = False
                 print('**** %u / %u' % (sent_frames, nframes))
                 if sent_frames == nframes:
                     self.data_sock.send_json({'htype': 'series_end'})

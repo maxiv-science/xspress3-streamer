@@ -3,6 +3,7 @@ Stream receivers for the Xspress3, both for the data and monitoring ports.
 """
 
 import zmq
+import json
 import numpy as np
 import os, h5py
 import time
@@ -36,6 +37,7 @@ class WritingReceiver(DummyReceiver):
     Receiver which reads from the data PUB socket and writes to hdf5.
     """
     def run(self):
+        print('disposable writer running')
         while True:
             meta = self.sock.recv_json()
             print(meta)
@@ -69,7 +71,7 @@ class WritingReceiver(DummyReceiver):
                 fp.flush()
                 fp.close()
                 if self.disposable:
-                    print('disposable writer thread done')
+                    print('disposable writer done')
                     return 0
 
 class LiveViewReceiver(object):
@@ -80,22 +82,24 @@ class LiveViewReceiver(object):
     def __init__(self, port=9998, host='localhost', delay=.5):
         context = zmq.Context()
         self.sock = context.socket(zmq.REQ)
-        self.sock.connect ("tcp://%s:%u" % (host, port))
-        self.sock.setsockopt(zmq.LINGER, int(delay*1000/2))
+        res = self.sock.connect("tcp://%s:%u" % (host, port))
         self.delay = delay
 
     def run(self):
-        raise NotImplementedError
         plt.ion()
         fig = plt.figure()
         while True:
             plt.pause(self.delay)
             self.sock.send_string('give us a frame please!')
             print('asked for a frame...')
-            meta = self.sock.recv_json(flags=zmq.NOBLOCK)
+            parts = self.sock.recv_multipart() # blocks
+            meta = json.loads(parts[0])
             frameno = meta['frame']
             m, n = meta['shape'][:2]
-            buff = self.sock.recv()
-            frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
-            plt.clear()
-            plt.plot(frame)
+            print('***', meta, len(parts[1]))
+            frame = np.frombuffer(parts[1], dtype=meta['type']).reshape((m, n))
+            plt.gca().clear()
+            print(frame.shape)
+            for i, curve in enumerate(frame):
+                plt.plot(curve, label='%u'%i)
+            plt.legend()
