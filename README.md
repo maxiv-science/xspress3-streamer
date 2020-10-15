@@ -7,7 +7,7 @@ This package provides
 
 ## Pipeline overview
 
-![Pipeline overview](doc/overview.png "Pipeline overview")
+<img src="doc/overview.png" alt="Pipeline overview" width="800px"/>
 
 ## Data and monitor streams
 
@@ -17,4 +17,4 @@ Two zmq interfaces are presented. An efficient data socket which transfers raw d
 
 The built-in data writer writes frames together with deadtime correction information and all scalar quantities (event information, exact frame time in clock cycles, etc) to file. Any custom file writer can be hooked up to the zmq data port.
 
-![HDF5 format](doc/hdf5_structure.png "HDF5 format")
+<img src="doc/hsd5_structure.png" alt="HDF5 format" width="800px"/>
