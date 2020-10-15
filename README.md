@@ -7,4 +7,14 @@ This package provides
 
 ## Pipeline overview
 
-![Pipeline overview](doc/overview.png "Pipeline overview")
+![Pipeline overview](doc/overview.png "Pipeline overview" =500x)
+
+## Data and monitor streams
+
+Two zmq interfaces are presented. An efficient data socket which transfers raw data with minimal latency, and a monitoring socket which gives the latest frame upon request by for example a live viewer.
+
+## Data written
+
+The built-in data writer writes frames together with deadtime correction information and all scalar quantities (event information, exact frame time in clock cycles, etc) to file. Any custom file writer can be hooked up to the zmq data port.
+
+![HDF5 format](doc/hdf5_structure.png "HDF5 format" =500x)
