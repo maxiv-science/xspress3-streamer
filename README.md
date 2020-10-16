@@ -5,6 +5,12 @@ This package provides
 - A Tango device to optionally contain these things, and
 - Basic stream receivers for live plotting and fast file writing.
 
+## To-do list
+- Direct readback of histogram and scalar data over Tango.
+- Expose window counters (aka ROI:s).
+- Enable recording only part of the spectrum (what the SDK calls ROI:s).
+- Gated triggering (not timing frames by the internal clock).
+
 ## Pipeline overview
 
 <img src="doc/overview.png" alt="Pipeline overview" width="800px"/>
