@@ -5,7 +5,6 @@ Limitations:
 * The device is not operated in circular buffer mode, so there's a memory
   limit to the number of frames which can be recorded in one go, typically
   16384 frames if the full energy axis is used.
-* ROI:s (cropping the data at an eary stage) are not implemented yet.
 * Currently no auxiliary dimensions are taken care of.
 * Productively using multi-card setups would require additional timing setup.
 """
