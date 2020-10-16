@@ -13,6 +13,10 @@ This package provides
 
 ## Pipeline overview
 
+The core of the pipeline is a process running on the rack server. This process runs the C-library, listens to commands, streams out data, optionally writes files, and provides live data on the monitoring port upon request. This is done in a dedicated thread, so that the Tango device remains responsive.
+
+Not that the file writing, the downstream receivers, and the live viewer are optional. Sardana controllers are not provided, as NanoMAX runs contrast instead.
+
 <img src="doc/overview.png" alt="Pipeline overview" width="800px"/>
 
 ## Data and monitor streams
