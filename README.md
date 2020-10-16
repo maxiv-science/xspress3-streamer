@@ -28,3 +28,9 @@ Two zmq interfaces are presented. An efficient data socket which transfers raw d
 The built-in data writer writes frames together with deadtime correction information and all scalar quantities (event information, exact frame time in clock cycles, etc) to file. Any custom file writer can be hooked up to the zmq data port.
 
 <img src="doc/hsd5_structure.png" alt="HDF5 format" width="800px"/>
+
+## Limitations
+- The device is not operated in circular buffer mode, so there's a memory limit to the number of frames which can be recorded in one go, typically 16384 frames if the full energy axis is used.
+- Currently no auxiliary dimensions are taken care of. Not even sure what these would be.
+- Productively using multi-card setups would require additional timing setup.
+ 
