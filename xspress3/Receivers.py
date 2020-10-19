@@ -7,7 +7,6 @@ import json
 import numpy as np
 import os, h5py
 import time
-import matplotlib.pyplot as plt
 
 class DummyReceiver(object):
     """
@@ -86,6 +85,7 @@ class LiveViewReceiver(object):
         self.delay = delay
 
     def run(self):
+        import matplotlib.pyplot as plt
         plt.ion()
         fig = plt.figure()
         while True:
