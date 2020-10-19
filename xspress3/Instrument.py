@@ -164,7 +164,7 @@ class Xspress3(object):
             elif n_trig == n_frames:
                 trg_mode = self.XSP3_ITFG_TRIG_MODE_HARDWARE
             self.check(libxspress3.xsp3_itfg_setup(self.handle, card, n_frames, cycles, trg_mode, self._gap_mode))
-            selc.check(libxspress3.xsp3_histogram_start(self.handle, card)) # ...and start() here
+            self.check(libxspress3.xsp3_histogram_start(self.handle, card)) # ...and start() here
 
     def soft_trigger(self, card=0):
         self.check(libxspress3.xsp3_histogram_continue(self.handle, card))
