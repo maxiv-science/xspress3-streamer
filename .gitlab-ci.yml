@@ -1,0 +1,8 @@
+include:
+  - project: 'kits-maxiv/cfg-maxiv-gitlabci'
+    file: '/.pythonds-ci.yml'
+
+build el7 pythonds 36:
+  variables:
+    PACKAGE_NAME: 'tangods-xspress3'
+
