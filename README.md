@@ -30,7 +30,6 @@ The built-in data writer writes frames together with deadtime correction informa
 <img src="doc/hsd5_structure.png" alt="HDF5 format" width="800px"/>
 
 ## Limitations
-- The device is not operated in circular buffer mode, so there's a memory limit to the number of frames which can be recorded in one go, typically 16384 frames if the full energy axis is used.
 - Currently no auxiliary dimensions are taken care of. Not even sure what these would be.
 - Productively using multi-card setups would require additional timing setup.
  

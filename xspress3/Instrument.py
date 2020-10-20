@@ -2,9 +2,6 @@
 Implements a Python3 interface to the Xspress3, via the proprietary SDK.
 
 Limitations:
-* The device is not operated in circular buffer mode, so there's a memory
-  limit to the number of frames which can be recorded in one go, typically
-  16384 frames if the full energy axis is used.
 * Currently no auxiliary dimensions are taken care of.
 * Productively using multi-card setups would require additional timing setup.
 """
@@ -70,14 +67,16 @@ class Xspress3(object):
             self.XSP3_ITFG_GAP_MODE_500NS: 500e-9,
             self.XSP3_ITFG_GAP_MODE_1US: 1e-6,}[self._gap_mode]
         self.check(libxspress3.xsp3_set_run_flags(self.handle,
-                    self.XSP3_RUN_FLAGS_HIST | self.XSP3_RUN_FLAGS_SCALERS))
+                    self.XSP3_RUN_FLAGS_HIST |
+                    self.XSP3_RUN_FLAGS_SCALERS |
+                    self.XSP3_RUN_FLAGS_CIRCULAR_BUFFER))
         self.check(libxspress3.xsp3_clocks_setup(self.handle, 0, 
                         self.XSP3_CLK_SRC_XTAL,
                         self.XSP3_CLK_FLAGS_MASTER|self.XSP3_CLK_FLAGS_NO_DITHER, 0))
         self.check(libxspress3.xsp3_restore_settings(self.handle, config_path.encode('ascii'), 0))
 
     def check(self, result):
-        if result == self.XSP3_OK:
+        if (result == self.XSP3_OK) or (result > 0):
             return result
         else:
             raise Exception('SDK Error: %d (%s),\n   the last error is: "%s"' %
@@ -172,7 +171,7 @@ class Xspress3(object):
 
     def read_hist_data(self, starting_frame=0, n_frames=None,
                      starting_energy=0, n_energies=None,
-                     starting_channel=None, n_channels=None):
+                     starting_channel=0, n_channels=None):
         """
         Reads histogram data for some cuboid in the
         (frames, energy bins, channels) space. The default is to
@@ -232,6 +231,16 @@ class Xspress3(object):
         scalars = self.read_scalar_data(*args, **kwargs)
         return scalars[:, :, 5:7]
 
+    def clear_circular_buffer(self, starting_frame=0, n_frames=None):
+        """
+        Acknowledge read of the circular buffer for all channels.
+        """
+        if n_frames is None:
+            n_frames = self.nframes_processed
+        first_channel, n_channels = 0, self.num_chan
+        self.check(libxspress3.xsp3_histogram_circ_ack(self.handle,
+            first_channel, starting_frame, n_channels, n_frames))
+
     def calculate_dtc(self, starting_frame=0, n_frames=None):
         """
         Calculate dead time correction factor and estimated total input counts
@@ -282,6 +291,13 @@ class Xspress3(object):
     def nframes_processed(self):
         return libxspress3.xsp3_scaler_check_progress(0)
 
+    @property
+    def overrun_detected(self):
+        """
+        Check if a circular buffer overrun has been detected anywhere.
+        """
+        res = self.check(libxspress3.xsp3_histogram_get_circ_overrun(self.handle, -1, None))
+        return bool(res)
 
 if __name__ == '__main__':
     xsp = Xspress3()

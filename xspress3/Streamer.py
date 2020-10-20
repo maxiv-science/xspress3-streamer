@@ -8,6 +8,9 @@ else:
     from .Instrument import Xspress3
 import numpy as np
 
+class CircularBufferError(Exception):
+    pass
+
 class Streamer(Thread):
     def __init__(self, instrument, data_port=9999, monitor_port=9998, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -25,6 +28,7 @@ class Streamer(Thread):
         stopped = True
         sent_last_to_monitor = False
         data = np.zeros((2,2), dtype='uint32')
+        trackers = {}
         while not killed:
             # handle incoming commands - no block or timeout
             try:
@@ -76,7 +80,8 @@ class Streamer(Thread):
                                      'type': 'uint32',
                                      'compression': 'none'})
                 # then send the histogram image - super fast with buffers
-                self.data_sock.send(data, copy=False)
+                trackers[sent_frames] = self.data_sock.send(data, copy=False, track=True)
+
                 # then send the additional scalar info - a bit stupid to
                 # pickle like this, but takes ~100 us so it's ok.
                 self.data_sock.send_pyobj({'deadtime_correction_factors': dtc[0],
@@ -89,6 +94,16 @@ class Streamer(Thread):
                     self.data_sock.send_json({'htype': 'series_end'})
             else:
                 time.sleep(.01)
+
+            # check for circular buffer overrun
+            if self.instrument.overrun_detected:
+                raise CircularBufferError("Circular buffer overrun detected!")
+
+            # free up the SDK's frame buffer when frames have been sent out
+            for key, val in trackers:
+                if not val.pending:
+                    self.instrument.clear_circular_buffer(starting_frame=key, n_frames=1)
+                    trackers.pop(key)
 
 if __name__ == '__main__':
     """
