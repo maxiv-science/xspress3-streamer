@@ -28,7 +28,6 @@ class Streamer(Thread):
         stopped = True
         sent_last_to_monitor = False
         data = np.zeros((2,2), dtype='uint32')
-        trackers = {}
         while not killed:
             # handle incoming commands - no block or timeout
             try:
@@ -69,9 +68,10 @@ class Streamer(Thread):
             available_frames = self.instrument.nframes_processed
             if (available_frames > sent_frames) and not stopped:
                 # gather data
-                data = self.instrument.read_hist_data(starting_frame=sent_frames, n_frames=1)
-                dtc, i0 = self.instrument.calculate_dtc(starting_frame=sent_frames, n_frames=1)
-                scalars = self.instrument.read_scalar_data(starting_frame=sent_frames, n_frames=1)
+                frame_info = {'starting_frame':sent_frames, 'n_frames':1}
+                data = self.instrument.read_hist_data(**frame_info)
+                dtc, i0 = self.instrument.calculate_dtc(**frame_info)
+                scalars = self.instrument.read_scalar_data(**frame_info)
                 print('sending data (%s) because available=%u and sent=%u'%((data.shape[1], data.shape[0]), available_frames, sent_frames))
                 # first send a header
                 self.data_sock.send_json({'htype': 'image',
@@ -79,8 +79,10 @@ class Streamer(Thread):
                                      'shape': (data.shape[1], data.shape[0]),
                                      'type': 'uint32',
                                      'compression': 'none'})
-                # then send the histogram image - super fast with buffers
-                trackers[sent_frames] = self.data_sock.send(data, copy=False, track=True)
+                # then send the histogram image - copy the data to release
+                # the SDK's circular buffer and let zmq deal with it.
+                self.data_sock.send(data, copy=True)
+                self.instrument.clear_circular_buffer(**frame_info)
 
                 # then send the additional scalar info - a bit stupid to
                 # pickle like this, but takes ~100 us so it's ok.
@@ -98,12 +100,6 @@ class Streamer(Thread):
             # check for circular buffer overrun
             if self.instrument.overrun_detected:
                 raise CircularBufferError("Circular buffer overrun detected!")
-
-            # free up the SDK's frame buffer when frames have been sent out
-            for key, val in trackers:
-                if not val.pending:
-                    self.instrument.clear_circular_buffer(starting_frame=key, n_frames=1)
-                    trackers.pop(key)
 
 if __name__ == '__main__':
     """
