@@ -43,12 +43,16 @@ ERROR_LOOKUP = {
 class Xspress3(object):
     def __init__(self, ncards=1, maxframes=-1, baseip=None,
                  baseport=-1, basemac=None, nchan=-1, create_mod=-1,
-                 name=None, debug=-1, cardindex=-1,
+                 name=None, debug=-1, cardindex=-1, debounce=80,
                  header_path='/opt/xspress3-sdk/include',
                  config_path='/home/xspress3/settings',):
         """
         The C constructor takes -1 and NULL for defaults everywhere
         for ints/*chars, respectively.
+
+        debounce: (int) minimum number of 80 MHz clock cycles for a gate
+                        to be considered changed, for excluding artefacts
+                        in ringing cables.
         """
         baseip = baseip.encode() if baseip else None # converts 0 and "" to None
         basemac = basemac.encode() if basemac else None
@@ -63,6 +67,7 @@ class Xspress3(object):
                                 (ERROR_LOOKUP[handle], self.error()))
         self.handle = handle
         self._parse_headers(header_path)
+        self.debounce = debounce
         self._gap_mode = self.XSP3_ITFG_GAP_MODE_25NS
         self._gap_time = {
             self.XSP3_ITFG_GAP_MODE_25NS: 25e-9,
@@ -100,6 +105,10 @@ class Xspress3(object):
                         exec('self.%s = %s' % (var, val)) # for future use
                         exec('%s = %s' % (var, val)) # for composite macros
 
+    @property
+    def _debounce_flag(self):
+        return (((self.debounce)&0xFF)<<16)
+
     def error(self):
         """
         Get the latest error message.
@@ -133,38 +142,50 @@ class Xspress3(object):
         """
         return libxspress3.xsp3_get_bins_per_mca(self.handle)
     
-    def acquire_frames(self, frame_time=1., n_frames=1, n_trig=1, hw_trig=False, card=0,):
+    def acquire_frames(self, frame_time=1., n_frames=1, n_trig=1, trig_mode='software', card=0,):
         """
         Starts the acquisition of internally timed frames.
 
         frame_time: (float) exposure time plus gap time (which is short)
         n_frames:   (int) how many frames to gather
         n_trig:     (int) how many triggers to expect (equal to 1 or n_frames)
-        hw_trig:    (bool) whether to expect HW triggers
+        trig_mode:  (str) 'software', 'rising', or 'gate'
         card:       (int) which card to use
         """
 
         fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)
         print('Can fit %u frames' % fit_frames)
-        self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
+        trig_mode = trig_mode.lower()
+        assert trig_mode in ('software', 'rising', 'gate'), 'Invalid trigger mode!'
         self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, n_frames))
         cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * 80e6)) # time in 80 MHz clock cycles
         if (n_trig != n_frames) and (n_trig != 1):
             raise AttributeError('n_trig must equal 1 or n_frames')
-        if not hw_trig:
+        if trig_mode == 'software':
             if n_trig == 1:
                 trg_mode = self.XSP3_ITFG_TRIG_MODE_SOFTWARE_ONLY_FIRST
             elif n_trig == n_frames:
                 trg_mode = self.XSP3_ITFG_TRIG_MODE_SOFTWARE
+            self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
             self.check(libxspress3.xsp3_itfg_setup(self.handle, card, n_frames, cycles, trg_mode, self._gap_mode))
             self.check(libxspress3.xsp3_histogram_arm(self.handle, card)) # the manual says to call arm() here...
-        else:
+        elif trig_mode == 'rising':
             if n_trig == 1:
                 trg_mode = self.XSP3_ITFG_TRIG_MODE_HARDWARE_ONLY_FIRST
             elif n_trig == n_frames:
                 trg_mode = self.XSP3_ITFG_TRIG_MODE_HARDWARE
+            self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
             self.check(libxspress3.xsp3_itfg_setup(self.handle, card, n_frames, cycles, trg_mode, self._gap_mode))
             self.check(libxspress3.xsp3_histogram_start(self.handle, card)) # ...and start() here
+        elif trig_mode == 'gate':
+            # Note: the SDK prescribes putting XSP3_GTIMA_SRC_ flags
+            # through the operation ((x)&7), which makes no difference
+            # of course so skipping as advance preprocessor macros have
+            # to be done manually.
+            self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card,
+                            self.XSP3_GTIMA_SRC_TTL_VETO_ONLY |
+                            self._debounce_flag))
+            self.check(libxspress3.xsp3_set_glob_timeFixed(self.handle, card, 0))
 
     def soft_trigger(self, card=0):
         self.check(libxspress3.xsp3_histogram_continue(self.handle, card))
