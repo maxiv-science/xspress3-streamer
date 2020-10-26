@@ -180,8 +180,9 @@ class Xspress3DS(Device, StandardDetector):
                 self.set_state(DevState.STANDBY)
             # check if the Streamer is OK
             if not self.streamer.is_alive():
+                exc = self.streamer.errq.get()
                 self.set_state(DevState.FAULT)
-                self.set_status('My Streamer thread is dead! Buffer overrun?')
+                self.set_status('My Streamer thread is dead with this error: %s' % exc)
 
 def main():
     Xspress3DS.run_server()
