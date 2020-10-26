@@ -146,7 +146,7 @@ class Xspress3(object):
         fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)
         print('Can fit %u frames' % fit_frames)
         self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
-        self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, n_frames))
+        self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, fit_frames))
         cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * 80e6)) # time in 80 MHz clock cycles
         if (n_trig != n_frames) and (n_trig != 1):
             raise AttributeError('n_trig must equal 1 or n_frames')
