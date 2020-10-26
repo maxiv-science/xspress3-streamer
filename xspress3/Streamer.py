@@ -67,12 +67,14 @@ class Streamer(Thread):
             # handle incoming data - only sleep if there's none
             available_frames = self.instrument.nframes_processed
             if (available_frames > sent_frames) and not stopped:
+                do_print = (available_frames - sent_frames) < 2
                 # gather data
                 frame_info = {'starting_frame':sent_frames, 'n_frames':1}
                 data = self.instrument.read_hist_data(**frame_info)
                 dtc, i0 = self.instrument.calculate_dtc(**frame_info)
                 scalars = self.instrument.read_scalar_data(**frame_info)
-                print('sending data (%s) because available=%u and sent=%u'%((data.shape[1], data.shape[0]), available_frames, sent_frames))
+                if do_print:
+                    print('sending data (%s) because available=%u and sent=%u'%((data.shape[1], data.shape[0]), available_frames, sent_frames))
                 # first send a header
                 self.data_sock.send_json({'htype': 'image',
                                      'frame': sent_frames,
@@ -91,7 +93,8 @@ class Streamer(Thread):
                                       'scalars': scalars[0]})
                 sent_frames += 1
                 sent_last_to_monitor = False
-                print('**** %u / %u' % (sent_frames, nframes))
+                if do_print:
+                    print('**** %u / %u' % (sent_frames, nframes))
                 if sent_frames == nframes:
                     self.data_sock.send_json({'htype': 'series_end'})
             else:

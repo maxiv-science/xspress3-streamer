@@ -172,12 +172,16 @@ class Xspress3DS(Device, StandardDetector):
         self.set_state(DevState.STANDBY)
 
     def always_executed_hook(self):
-        # set the state back to standby when done
         if self.get_state() == DevState.RUNNING:
+            # set the state back to standby when done
             done = self.streamer.instrument.nframes_processed
             due = self._ntriggers * self._nframespertrigger
             if done == due:
                 self.set_state(DevState.STANDBY)
+            # check if the Streamer is OK
+            if not self.streamer.is_alive():
+                self.set_state(DevState.FAULT)
+                self.set_status('My Streamer thread is dead! Buffer overrun?')
 
 def main():
     Xspress3DS.run_server()
