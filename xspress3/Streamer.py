@@ -19,6 +19,8 @@ class Streamer(Thread):
         self.errq = Queue()
         context = zmq.Context()
         self.data_sock = context.socket(zmq.PUB)
+        # hwm=0 is not ideal, but rather hava a crash than silent data loss
+        self.data_sock.set_hwm(0)
         self.data_sock.bind('tcp://*:%u' % data_port)
         self.monitor_sock = context.socket(zmq.REP)
         self.monitor_sock.bind('tcp://*:%u' % monitor_port)
