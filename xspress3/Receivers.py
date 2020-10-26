@@ -21,15 +21,30 @@ class DummyReceiver(object):
         self.disposable = disposable
 
     def run(self):
+        last_print = 0.
+        frames_since_last_print = 0
+        frames_total = 0
         while True:
             meta = self.sock.recv_json()
-            print(meta)
             if meta['htype'] == 'image':
                 buff = self.sock.recv()
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
                 extra = self.sock.recv_pyobj()
-                print(frame.shape, frame.dtype, extra['deadtime_correction_factors'].shape)
+                frames_since_last_print += 1
+                frames_total += 1
+                # print some output sometimes
+                if (time.time() - last_print) > 1.:
+                    print('WritingReceiver: got %u new frames (%u total), shape %s, dtype %s'
+                            %(frames_since_last_print, frames_total, frame.shape, frame.dtype))
+                    last_print = time.time()
+                    frames_since_last_print = 0
+            elif meta['htype'] == 'series_end':
+                print('WritingReceiver: got %u new frames (%u total), shape %s, dtype %s'
+                            %(frames_since_last_print, frames_total, frame.shape, frame.dtype))
+                print(meta)
+            else:
+                print(meta)
 
 class WritingReceiver(DummyReceiver):
     """
@@ -37,16 +52,19 @@ class WritingReceiver(DummyReceiver):
     """
     def run(self):
         print('disposable writer running')
+        last_print = 0.
+        frames_since_last_print = 0
         while True:
             meta = self.sock.recv_json()
-            print(meta)
             if meta['htype'] == 'header':
+                print(meta)
                 fn = meta['filename']
                 while os.path.exists(fn):
                     fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
                 fp = h5py.File(fn, 'w')
 
             elif meta['htype'] == 'image':
+                frames_since_last_print += 1
                 buff = self.sock.recv()
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
@@ -64,9 +82,14 @@ class WritingReceiver(DummyReceiver):
                         old = d.shape[0]
                         d.resize((old+1,) + d.shape[1:])
                         d[old:] = arr
-                print(frame.shape, frame.dtype)
+                # print some output
+                if (time.time() - last_print) > 1.:
+                    print('WritingReceiver: got %u new frames (shape %s, dtype %s)'%(frames_since_last_print, frame.shape, frame.dtype))
+                    last_print = time.time()
+                    frames_since_last_print = 0
 
             elif meta['htype'] == 'series_end':
+                print(meta)
                 fp.flush()
                 fp.close()
                 if self.disposable:

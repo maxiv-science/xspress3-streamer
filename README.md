@@ -15,13 +15,17 @@ This package provides
 
 The core of the pipeline is a process running on the rack server. This process runs the C-library, listens to commands, streams out data, optionally writes files, and provides live data on the monitoring port upon request. This is done in a dedicated thread, so that the Tango device remains responsive.
 
-Not that the file writing, the downstream receivers, and the live viewer are optional. Sardana controllers are not provided, as NanoMAX runs [contrast](https://github.com/maxiv-science/contrast) instead.
+Note that the file writing, the downstream receivers, and the live viewer are optional. Sardana controllers are not provided, as NanoMAX runs [contrast](https://github.com/maxiv-science/contrast) instead.
 
 <img src="doc/overview.png" alt="Pipeline overview" width="800px"/>
 
 ## Data and monitor streams
 
 Two zmq interfaces are presented. An efficient data socket which transfers raw data with minimal latency, and a monitoring socket which gives the latest frame upon request by for example a live viewer.
+
+## Data rates
+
+A quick test shows that the built-in writer thread (writing to the MAX IV storage over NFS) limits average data rates to around 500 Hz. Using a separate stream receiver process, frame rates were found to reach around 3.5 kHz (streaming to localhost), 1.7 kHz (streaming to the nanomax cc machine), and 750 Hz (streaming to the compute cluster). For the localhost case, rates are probably limited by pickling and memory copies. When streaming to the nanomax control machine, the observed rate roughly corresponds to that machine's 1 Gbit/s interface (1e9 bit/s / 32bit * 4096 * 4 ~ 1900 Hz). For the cluster case, who knows. All of this can be improved if needed.
 
 ## Data written
 
@@ -30,7 +34,6 @@ The built-in data writer writes frames together with deadtime correction informa
 <img src="doc/hsd5_structure.png" alt="HDF5 format" width="800px"/>
 
 ## Limitations
-- The device is not operated in circular buffer mode, so there's a memory limit to the number of frames which can be recorded in one go, typically 16384 frames if the full energy axis is used.
 - Currently no auxiliary dimensions are taken care of. Not even sure what these would be.
 - Productively using multi-card setups would require additional timing setup.
  
