@@ -145,7 +145,7 @@ class Xspress3DS(Device, StandardDetector):
     @command
     def Arm(self):
         self.set_state(DevState.RUNNING)
-        if self._write_hdf5:
+        if self._write_hdf5 and self._destinationfilename:
             self.hdf_writer = WritingReceiver(host='localhost', port=self.StreamerPort, disposable=True)
             self.hdf_thread = Thread(target=self.hdf_writer.run)
             self.hdf_thread.start()
