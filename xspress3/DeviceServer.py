@@ -109,6 +109,7 @@ class Xspress3DS(Device, StandardDetector):
         self.streamer = Streamer(instrument=instr, data_port=self.StreamerPort, monitor_port=self.MonitorPort)
         self.streamer.start()
         self.set_state(DevState.STANDBY)
+        self.set_status('')
 
     def __del__(self):
         print('Killing and joining the streamer...')

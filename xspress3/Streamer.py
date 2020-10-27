@@ -31,6 +31,9 @@ class Streamer(Thread):
         stopped = True
         sent_last_to_monitor = False
         data = np.zeros((2,2), dtype='uint32')
+        last_print = 0.
+        frames_since_last_print = 0
+        nframes = 0
         while not killed:
             try:
                 # handle incoming commands - no block or timeout
@@ -71,14 +74,11 @@ class Streamer(Thread):
                 # handle incoming data - only sleep if there's none
                 available_frames = self.instrument.nframes_processed
                 if (available_frames > sent_frames) and not stopped:
-                    do_print = (available_frames - sent_frames) < 2
                     # gather data
                     frame_info = {'starting_frame':sent_frames, 'n_frames':1}
                     data = self.instrument.read_hist_data(**frame_info)
                     dtc, i0 = self.instrument.calculate_dtc(**frame_info)
                     scalars = self.instrument.read_scalar_data(**frame_info)
-                    if do_print:
-                        print('sending data (%s) because available=%u and sent=%u'%((data.shape[1], data.shape[0]), available_frames, sent_frames))
                     # first send a header
                     self.data_sock.send_json({'htype': 'image',
                                          'frame': sent_frames,
@@ -89,6 +89,7 @@ class Streamer(Thread):
                     # the SDK's circular buffer and let zmq deal with it.
                     self.data_sock.send(data, copy=True)
                     self.instrument.clear_circular_buffer(**frame_info)
+                    frames_since_last_print += 1
 
                     # then send the additional scalar info - a bit stupid to
                     # pickle like this, but takes ~100 us so it's ok.
@@ -97,12 +98,20 @@ class Streamer(Thread):
                                           'scalars': scalars[0]})
                     sent_frames += 1
                     sent_last_to_monitor = False
-                    if do_print:
-                        print('**** %u / %u' % (sent_frames, nframes))
                     if sent_frames == nframes:
                         self.data_sock.send_json({'htype': 'series_end'})
                 else:
                     time.sleep(.01)
+
+                # maybe time to print some info
+                if (time.time() - last_print) >= 1.:
+                    beginc, endc = ('\033[92m', '\033[0m')
+                    print(beginc, end='')
+                    print('Streamer: sent %u new frames (total %u / %u)' %
+                               (frames_since_last_print, sent_frames, nframes))
+                    print(endc, end='')
+                    last_print = time.time()
+                    frames_since_last_print = 0
 
                 # check for circular buffer overrun
                 if self.instrument.overrun_detected:

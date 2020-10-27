@@ -19,6 +19,10 @@ class DummyReceiver(object):
         self.sock.connect ("tcp://%s:%u" % (host, port))
         self.sock.setsockopt(zmq.SUBSCRIBE, b"")
         self.disposable = disposable
+        self._color = '\033[94m'
+
+    def print(self, msg):
+        print(self._color + str(msg) + '\033[0m')
 
     def run(self):
         last_print = 0.
@@ -35,29 +39,30 @@ class DummyReceiver(object):
                 frames_total += 1
                 # print some output sometimes
                 if (time.time() - last_print) > 1.:
-                    print('WritingReceiver: got %u new frames (%u total), shape %s, dtype %s'
+                    self.print('WritingReceiver: got %u new frames (%u total), shape %s, dtype %s'
                             %(frames_since_last_print, frames_total, frame.shape, frame.dtype))
                     last_print = time.time()
                     frames_since_last_print = 0
             elif meta['htype'] == 'series_end':
-                print('WritingReceiver: got %u new frames (%u total), shape %s, dtype %s'
+                self.print('WritingReceiver: got %u new frames (%u total), shape %s, dtype %s'
                             %(frames_since_last_print, frames_total, frame.shape, frame.dtype))
-                print(meta)
+                self.print(meta)
             else:
-                print(meta)
+                self.print(meta)
 
 class WritingReceiver(DummyReceiver):
     """
     Receiver which reads from the data PUB socket and writes to hdf5.
     """
     def run(self):
-        print('disposable writer running')
+        self.print('disposable writer running')
         last_print = 0.
         frames_since_last_print = 0
+        total_frames = 0
         while True:
             meta = self.sock.recv_json()
             if meta['htype'] == 'header':
-                print(meta)
+                self.print(meta)
                 fn = meta['filename']
                 while os.path.exists(fn):
                     fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
@@ -65,6 +70,7 @@ class WritingReceiver(DummyReceiver):
 
             elif meta['htype'] == 'image':
                 frames_since_last_print += 1
+                total_frames += 1
                 buff = self.sock.recv()
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
@@ -84,16 +90,17 @@ class WritingReceiver(DummyReceiver):
                         d[old:] = arr
                 # print some output
                 if (time.time() - last_print) > 1.:
-                    print('WritingReceiver: got %u new frames (shape %s, dtype %s)'%(frames_since_last_print, frame.shape, frame.dtype))
+                    self.print('WritingReceiver: got %u new frames (total %u)'
+                                  %(frames_since_last_print, total_frames))
                     last_print = time.time()
                     frames_since_last_print = 0
 
             elif meta['htype'] == 'series_end':
-                print(meta)
+                self.print(meta)
                 fp.flush()
                 fp.close()
                 if self.disposable:
-                    print('disposable writer done')
+                    self.print('disposable writer done')
                     return 0
 
 class LiveViewReceiver(object):
