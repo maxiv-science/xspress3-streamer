@@ -55,7 +55,8 @@ class WritingReceiver(DummyReceiver):
     Receiver which reads from the data PUB socket and writes to hdf5.
     """
     def run(self):
-        self.print('disposable writer running')
+        dsp = 'disposable' if self.disposable else 'persistent'
+        self.print('%s writer running'%dsp)
         last_print = 0.
         frames_since_last_print = 0
         total_frames = 0
@@ -101,6 +102,8 @@ class WritingReceiver(DummyReceiver):
                     frames_since_last_print = 0
 
             elif meta['htype'] == 'series_end':
+                self.print('WritingReceiver: got %u new frames (total %u)'
+                                  %(frames_since_last_print, total_frames))
                 self.print(meta)
                 if fn:
                     fp.flush()
