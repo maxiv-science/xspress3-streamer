@@ -42,6 +42,7 @@ class Streamer(Thread):
                     if cmd.startswith('start'):
                         stopped = False
                         filename = cmd.split()[1]
+                        filename = '' if filename.lower()=='none' else filename
                         nframes = int(cmd.split()[2])
                         self.data_sock.send_json({'htype': 'header',
                                              'filename': filename})

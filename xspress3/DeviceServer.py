@@ -158,8 +158,8 @@ class Xspress3DS(Device, StandardDetector):
             n_trig=self._ntriggers,
             hw_trig=(self._triggermode=='EXTERNAL'),
             card=0,)
-        if self._destinationfilename:
-            self.streamer.q.put('start %s %u' % (self._destinationfilename, nframes))
+        dest = self._destinationfilename if self._destinationfilename else 'None'
+        self.streamer.q.put('start %s %u' % (dest, nframes))
 
     @command
     def SoftwareTrigger(self):

@@ -61,12 +61,16 @@ class WritingReceiver(DummyReceiver):
         total_frames = 0
         while True:
             meta = self.sock.recv_json()
+            fn = ''
             if meta['htype'] == 'header':
                 self.print(meta)
                 fn = meta['filename']
-                while os.path.exists(fn):
-                    fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
-                fp = h5py.File(fn, 'w')
+                if fn:
+                    while os.path.exists(fn):
+                        fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
+                    fp = h5py.File(fn, 'w')
+                else:
+                    self.print('Filename empty, not saving!')
 
             elif meta['htype'] == 'image':
                 frames_since_last_print += 1
@@ -76,18 +80,19 @@ class WritingReceiver(DummyReceiver):
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
                 extra = self.sock.recv_pyobj()
                 extra['frames'] = frame
-                if meta['frame'] == 0:
-                    #create datasets
-                    for name, arr in extra.items():
-                        d = fp.create_dataset(name, shape=(1,)+arr.shape, maxshape=(None,)+arr.shape, dtype=arr.dtype)
-                        d[:] = arr
-                else:
-                    #expand datasets
-                    for name, arr in extra.items():
-                        d = fp[name]
-                        old = d.shape[0]
-                        d.resize((old+1,) + d.shape[1:])
-                        d[old:] = arr
+                if fn:
+                    if meta['frame'] == 0:
+                        #create datasets
+                        for name, arr in extra.items():
+                            d = fp.create_dataset(name, shape=(1,)+arr.shape, maxshape=(None,)+arr.shape, dtype=arr.dtype)
+                            d[:] = arr
+                    else:
+                        #expand datasets
+                        for name, arr in extra.items():
+                            d = fp[name]
+                            old = d.shape[0]
+                            d.resize((old+1,) + d.shape[1:])
+                            d[old:] = arr
                 # print some output
                 if (time.time() - last_print) > 1.:
                     self.print('WritingReceiver: got %u new frames (total %u)'
@@ -97,8 +102,9 @@ class WritingReceiver(DummyReceiver):
 
             elif meta['htype'] == 'series_end':
                 self.print(meta)
-                fp.flush()
-                fp.close()
+                if fn:
+                    fp.flush()
+                    fp.close()
                 if self.disposable:
                     self.print('disposable writer done')
                     return 0
