@@ -74,6 +74,7 @@ class Xspress3(object):
                         self.XSP3_CLK_SRC_XTAL,
                         self.XSP3_CLK_FLAGS_MASTER|self.XSP3_CLK_FLAGS_NO_DITHER, 0))
         self.check(libxspress3.xsp3_restore_settings(self.handle, config_path.encode('ascii'), 0))
+        self._latest_exptime = None
 
     def check(self, result):
         if (result == self.XSP3_OK) or (result > 0):
@@ -143,6 +144,7 @@ class Xspress3(object):
         card:       (int) which card to use
         """
 
+        self._latest_exptime = frame_time - self._gap_time
         fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)
         print('Can fit %u frames' % fit_frames)
         self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))

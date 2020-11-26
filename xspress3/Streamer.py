@@ -63,6 +63,7 @@ class Streamer(Thread):
                         sent_last_to_monitor = True
                         print('Message on the monitoring port: "%s". Sending an image.' % msg)
                         dct = {'htype': 'image',
+                               'exptime': self.instrument._latest_exptime,
                                'frame': sent_frames,
                                'type': 'uint32',
                                'shape': (data.shape[1], data.shape[0])}
@@ -81,6 +82,7 @@ class Streamer(Thread):
                     scalars = self.instrument.read_scalar_data(**frame_info)
                     # first send a header
                     self.data_sock.send_json({'htype': 'image',
+                                         'exptime': self.instrument._latest_exptime,
                                          'frame': sent_frames,
                                          'shape': (data.shape[1], data.shape[0]),
                                          'type': 'uint32',
