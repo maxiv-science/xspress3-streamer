@@ -62,10 +62,11 @@ class WritingReceiver(DummyReceiver):
         total_frames = 0
         while True:
             meta = self.sock.recv_json()
-            fn = ''
             if meta['htype'] == 'header':
                 self.print(meta)
                 fn = meta['filename']
+                if fn.lower() == 'none':
+                    fn = ''
                 if fn:
                     while os.path.exists(fn):
                         fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
