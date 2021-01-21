@@ -8,13 +8,19 @@ else:
     from .Instrument import Xspress3
 import numpy as np
 
+class CircularBufferError(Exception):
+    pass
+
 class Streamer(Thread):
     def __init__(self, instrument, data_port=9999, monitor_port=9998, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.instrument = instrument
         self.q = Queue()
+        self.errq = Queue()
         context = zmq.Context()
         self.data_sock = context.socket(zmq.PUB)
+        # hwm=0 is not ideal, but rather hava a crash than silent data loss
+        self.data_sock.set_hwm(0)
         self.data_sock.bind('tcp://*:%u' % data_port)
         self.monitor_sock = context.socket(zmq.REP)
         self.monitor_sock.bind('tcp://*:%u' % monitor_port)
@@ -25,70 +31,98 @@ class Streamer(Thread):
         stopped = True
         sent_last_to_monitor = False
         data = np.zeros((2,2), dtype='uint32')
+        last_print = 0.
+        frames_since_last_print = 0
+        nframes = 0
         while not killed:
-            # handle incoming commands - no block or timeout
             try:
-                cmd = self.q.get(block=False)
-                if cmd.startswith('start'):
-                    stopped = False
-                    filename = cmd.split()[1]
-                    nframes = int(cmd.split()[2])
-                    self.data_sock.send_json({'htype': 'header',
-                                         'filename': filename})
-                    sent_frames = 0
-                elif cmd.startswith('stop'):
-                    print('got the stop command!')
-                    stopped = True
-                    self.data_sock.send_json({'htype': 'series_end'})
-                elif cmd == 'kill':
-                    print('Streamer got the kill message. Going down!')
-                    killed = True
-            except Empty:
-                pass
-
-            # check for requests on the monitor port
-            if not sent_last_to_monitor:
+                # handle incoming commands - no block or timeout
                 try:
-                    msg = self.monitor_sock.recv_string(flags=zmq.NOBLOCK)
-                    sent_last_to_monitor = True
-                    print('Message on the monitoring port: "%s". Sending an image.' % msg)
-                    dct = {'htype': 'image',
-                           'frame': sent_frames,
-                           'type': 'uint32',
-                           'shape': (data.shape[1], data.shape[0])}
-                    self.monitor_sock.send_json(dct, flags=zmq.SNDMORE)
-                    self.monitor_sock.send(data)
-                except zmq.ZMQError:
+                    cmd = self.q.get(block=False)
+                    if cmd.startswith('start'):
+                        stopped = False
+                        filename = cmd.split()[1]
+                        filename = '' if filename.lower()=='none' else filename
+                        nframes = int(cmd.split()[2])
+                        self.data_sock.send_json({'htype': 'header',
+                                             'filename': filename})
+                        sent_frames = 0
+                    elif cmd.startswith('stop'):
+                        print('got the stop command!')
+                        stopped = True
+                        self.data_sock.send_json({'htype': 'series_end'})
+                    elif cmd == 'kill':
+                        print('Streamer got the kill message. Going down!')
+                        killed = True
+                except Empty:
                     pass
 
-            # handle incoming data - only sleep if there's none
-            available_frames = self.instrument.nframes_processed
-            if (available_frames > sent_frames) and not stopped:
-                # gather data
-                data = self.instrument.read_hist_data(starting_frame=sent_frames, n_frames=1)
-                dtc, i0 = self.instrument.calculate_dtc(starting_frame=sent_frames, n_frames=1)
-                scalars = self.instrument.read_scalar_data(starting_frame=sent_frames, n_frames=1)
-                print('sending data (%s) because available=%u and sent=%u'%((data.shape[1], data.shape[0]), available_frames, sent_frames))
-                # first send a header
-                self.data_sock.send_json({'htype': 'image',
-                                     'frame': sent_frames,
-                                     'shape': (data.shape[1], data.shape[0]),
-                                     'type': 'uint32',
-                                     'compression': 'none'})
-                # then send the histogram image - super fast with buffers
-                self.data_sock.send(data, copy=False)
-                # then send the additional scalar info - a bit stupid to
-                # pickle like this, but takes ~100 us so it's ok.
-                self.data_sock.send_pyobj({'deadtime_correction_factors': dtc[0],
-                                      'estimated_total_counts': i0[0],
-                                      'scalars': scalars[0]})
-                sent_frames += 1
-                sent_last_to_monitor = False
-                print('**** %u / %u' % (sent_frames, nframes))
-                if sent_frames == nframes:
-                    self.data_sock.send_json({'htype': 'series_end'})
-            else:
-                time.sleep(.01)
+                # check for requests on the monitor port
+                if not sent_last_to_monitor:
+                    try:
+                        msg = self.monitor_sock.recv_string(flags=zmq.NOBLOCK)
+                        sent_last_to_monitor = True
+                        print('Message on the monitoring port: "%s". Sending an image.' % msg)
+                        dct = {'htype': 'image',
+                               'exptime': self.instrument._latest_exptime,
+                               'frame': sent_frames,
+                               'type': 'uint32',
+                               'shape': (data.shape[1], data.shape[0])}
+                        self.monitor_sock.send_json(dct, flags=zmq.SNDMORE)
+                        self.monitor_sock.send(data)
+                    except zmq.ZMQError:
+                        pass
+
+                # handle incoming data - only sleep if there's none
+                available_frames = self.instrument.nframes_processed
+                if (available_frames > sent_frames) and not stopped:
+                    # gather data
+                    frame_info = {'starting_frame':sent_frames, 'n_frames':1}
+                    data = self.instrument.read_hist_data(**frame_info)
+                    dtc, i0 = self.instrument.calculate_dtc(**frame_info)
+                    scalars = self.instrument.read_scalar_data(**frame_info)
+                    # first send a header
+                    self.data_sock.send_json({'htype': 'image',
+                                         'exptime': self.instrument._latest_exptime,
+                                         'frame': sent_frames,
+                                         'shape': (data.shape[1], data.shape[0]),
+                                         'type': 'uint32',
+                                         'compression': 'none'})
+                    # then send the histogram image - copy the data to release
+                    # the SDK's circular buffer and let zmq deal with it.
+                    self.data_sock.send(data, copy=True)
+                    self.instrument.clear_circular_buffer(**frame_info)
+                    frames_since_last_print += 1
+
+                    # then send the additional scalar info - a bit stupid to
+                    # pickle like this, but takes ~100 us so it's ok.
+                    self.data_sock.send_pyobj({'deadtime_correction_factors': dtc[0],
+                                          'estimated_total_counts': i0[0],
+                                          'scalars': scalars[0]})
+                    sent_frames += 1
+                    sent_last_to_monitor = False
+                    if sent_frames == nframes:
+                        self.data_sock.send_json({'htype': 'series_end'})
+                else:
+                    time.sleep(.01)
+
+                # maybe time to print some info
+                if (time.time() - last_print) >= 1.:
+                    beginc, endc = ('\033[92m', '\033[0m')
+                    print(beginc, end='')
+                    print('Streamer: sent %u new frames (total %u / %u)' %
+                               (frames_since_last_print, sent_frames, nframes))
+                    print(endc, end='')
+                    last_print = time.time()
+                    frames_since_last_print = 0
+
+                # check for circular buffer overrun
+                if self.instrument.overrun_detected:
+                    raise CircularBufferError("Circular buffer overrun detected!")
+
+            except Exception as e:
+                self.errq.put(e)
+                raise e
 
 if __name__ == '__main__':
     """

@@ -19,58 +19,98 @@ class DummyReceiver(object):
         self.sock.connect ("tcp://%s:%u" % (host, port))
         self.sock.setsockopt(zmq.SUBSCRIBE, b"")
         self.disposable = disposable
+        self._color = '\033[94m'
+
+    def print(self, msg):
+        print(self._color + str(msg) + '\033[0m')
 
     def run(self):
+        last_print = 0.
+        frames_since_last_print = 0
+        frames_total = 0
         while True:
             meta = self.sock.recv_json()
-            print(meta)
             if meta['htype'] == 'image':
                 buff = self.sock.recv()
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
                 extra = self.sock.recv_pyobj()
-                print(frame.shape, frame.dtype, extra['deadtime_correction_factors'].shape)
+                frames_since_last_print += 1
+                frames_total += 1
+                # print some output sometimes
+                if (time.time() - last_print) > 1.:
+                    self.print('WritingReceiver: got %u new frames (%u total), shape %s, dtype %s'
+                            %(frames_since_last_print, frames_total, frame.shape, frame.dtype))
+                    last_print = time.time()
+                    frames_since_last_print = 0
+            elif meta['htype'] == 'series_end':
+                self.print('WritingReceiver: got %u new frames (%u total), shape %s, dtype %s'
+                            %(frames_since_last_print, frames_total, frame.shape, frame.dtype))
+                self.print(meta)
+            else:
+                self.print(meta)
 
 class WritingReceiver(DummyReceiver):
     """
     Receiver which reads from the data PUB socket and writes to hdf5.
     """
     def run(self):
-        print('disposable writer running')
+        dsp = 'disposable' if self.disposable else 'persistent'
+        self.print('%s writer running'%dsp)
+        last_print = 0.
+        frames_since_last_print = 0
+        total_frames = 0
         while True:
             meta = self.sock.recv_json()
-            print(meta)
             if meta['htype'] == 'header':
+                self.print(meta)
                 fn = meta['filename']
-                while os.path.exists(fn):
-                    fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
-                fp = h5py.File(fn, 'w')
+                if fn.lower() == 'none':
+                    fn = ''
+                if fn:
+                    while os.path.exists(fn):
+                        fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
+                    fp = h5py.File(fn, 'w')
+                else:
+                    self.print('Filename empty, not saving!')
 
             elif meta['htype'] == 'image':
+                frames_since_last_print += 1
+                total_frames += 1
                 buff = self.sock.recv()
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
                 extra = self.sock.recv_pyobj()
                 extra['frames'] = frame
-                if meta['frame'] == 0:
-                    #create datasets
-                    for name, arr in extra.items():
-                        d = fp.create_dataset(name, shape=(1,)+arr.shape, maxshape=(None,)+arr.shape, dtype=arr.dtype)
-                        d[:] = arr
-                else:
-                    #expand datasets
-                    for name, arr in extra.items():
-                        d = fp[name]
-                        old = d.shape[0]
-                        d.resize((old+1,) + d.shape[1:])
-                        d[old:] = arr
-                print(frame.shape, frame.dtype)
+                if fn:
+                    if meta['frame'] == 0:
+                        #create datasets
+                        for name, arr in extra.items():
+                            d = fp.create_dataset(name, shape=(1,)+arr.shape, maxshape=(None,)+arr.shape, dtype=arr.dtype)
+                            d[:] = arr
+                    else:
+                        #expand datasets
+                        for name, arr in extra.items():
+                            d = fp[name]
+                            old = d.shape[0]
+                            d.resize((old+1,) + d.shape[1:])
+                            d[old:] = arr
+                # print some output
+                if (time.time() - last_print) > 1.:
+                    self.print('WritingReceiver: got %u new frames (total %u)'
+                                  %(frames_since_last_print, total_frames))
+                    last_print = time.time()
+                    frames_since_last_print = 0
 
             elif meta['htype'] == 'series_end':
-                fp.flush()
-                fp.close()
+                self.print('WritingReceiver: got %u new frames (total %u)'
+                                  %(frames_since_last_print, total_frames))
+                self.print(meta)
+                if fn:
+                    fp.flush()
+                    fp.close()
                 if self.disposable:
-                    print('disposable writer done')
+                    self.print('disposable writer done')
                     return 0
 
 class LiveViewReceiver(object):

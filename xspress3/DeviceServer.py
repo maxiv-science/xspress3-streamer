@@ -109,6 +109,7 @@ class Xspress3DS(Device, StandardDetector):
         self.streamer = Streamer(instrument=instr, data_port=self.StreamerPort, monitor_port=self.MonitorPort)
         self.streamer.start()
         self.set_state(DevState.STANDBY)
+        self.set_status('')
 
     def __del__(self):
         print('Killing and joining the streamer...')
@@ -145,7 +146,7 @@ class Xspress3DS(Device, StandardDetector):
     @command
     def Arm(self):
         self.set_state(DevState.RUNNING)
-        if self._write_hdf5:
+        if self._write_hdf5 and self._destinationfilename:
             self.hdf_writer = WritingReceiver(host='localhost', port=self.StreamerPort, disposable=True)
             self.hdf_thread = Thread(target=self.hdf_writer.run)
             self.hdf_thread.start()
@@ -157,8 +158,8 @@ class Xspress3DS(Device, StandardDetector):
             n_trig=self._ntriggers,
             hw_trig=(self._triggermode=='EXTERNAL'),
             card=0,)
-        if self._destinationfilename:
-            self.streamer.q.put('start %s %u' % (self._destinationfilename, nframes))
+        dest = self._destinationfilename if self._destinationfilename else 'None'
+        self.streamer.q.put('start %s %u' % (dest, nframes))
 
     @command
     def SoftwareTrigger(self):
@@ -172,12 +173,17 @@ class Xspress3DS(Device, StandardDetector):
         self.set_state(DevState.STANDBY)
 
     def always_executed_hook(self):
-        # set the state back to standby when done
         if self.get_state() == DevState.RUNNING:
+            # set the state back to standby when done
             done = self.streamer.instrument.nframes_processed
             due = self._ntriggers * self._nframespertrigger
             if done == due:
                 self.set_state(DevState.STANDBY)
+            # check if the Streamer is OK
+            if not self.streamer.is_alive():
+                exc = self.streamer.errq.get()
+                self.set_state(DevState.FAULT)
+                self.set_status('My Streamer thread is dead with this error: %s' % exc)
 
 def main():
     Xspress3DS.run_server()
