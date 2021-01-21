@@ -1,4 +1,5 @@
-from tango import DevState
+from tango import DevState, Attr, SpectrumAttr
+import PyTango
 from tango.server import Device, attribute, command, device_property
 from threading import Thread
 
@@ -108,13 +109,36 @@ class Xspress3DS(Device, StandardDetector):
                          config_path=self.ConfigPath)
         self.streamer = Streamer(instrument=instr, data_port=self.StreamerPort, monitor_port=self.MonitorPort)
         self.streamer.start()
+        
+        # create per channel attributes
+        self.initialize_per_channel_attributes()
+
         self.set_state(DevState.STANDBY)
         self.set_status('')
+
+    def delete_device(self):
+        self.debug_stream("In delete device")
+        self.__del__()
 
     def __del__(self):
         print('Killing and joining the streamer...')
         self.streamer.q.put('kill')
         self.streamer.join()
+
+    def initialize_per_channel_attributes(self):
+        nchans = self.streamer.instrument.num_chan
+        for ch in range(0,nchans):
+            #event width
+            name = "EventWidth_Ch"+str(ch)
+            ew = Attr(name, PyTango.DevShort, PyTango.AttrWriteType.READ)
+            self.add_attribute(attr=ew, r_meth=self.read_event_widths)
+
+    def read_event_widths(self, attr):
+        attrname = attr.get_name()
+        ch = int(attrname.split("Ch")[1])
+        self.debug_stream("Reading event width setting for %s " % attrname)
+        width = self.streamer.instrument.event_widths[ch]
+        attr.set_value(width)
 
     @attribute(dtype=bool, doc="The device can optionally receive its own stream and write it to hdf5.")
     def WriteHdf5(self):
