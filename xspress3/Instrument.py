@@ -38,7 +38,7 @@ ERROR_LOOKUP = {
 -20: 'XSP3_WOULD_BLOCK',}
 
 class Xspress3(object):
-    def __init__(self, ncards=1, maxframes=-1, baseip=None,
+    def __init__(self, ncards=1, maxframes=16384, baseip=None,
                  baseport=-1, basemac=None, nchan=-1, create_mod=-1,
                  name=None, debug=-1, cardindex=-1,
                  header_path='/opt/xspress3-sdk/include',
