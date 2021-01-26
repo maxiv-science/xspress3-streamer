@@ -37,6 +37,8 @@ ERROR_LOOKUP = {
 -14: 'XSP3_LOG_FILE_MISSING',
 -20: 'XSP3_WOULD_BLOCK',}
 
+CLOCK_FREQUENCY = 80e6 # 80 MHz
+
 class Xspress3(object):
     def __init__(self, ncards=1, maxframes=16384, baseip=None,
                  baseport=-1, basemac=None, nchan=-1, create_mod=-1,
@@ -167,7 +169,7 @@ class Xspress3(object):
         print('Can fit %u frames' % fit_frames)
         self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
         self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, fit_frames))
-        cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * 80e6)) # time in 80 MHz clock cycles
+        cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * CLOCK_FREQUENCY)) # time in clock cycles
         if (n_trig != n_frames) and (n_trig != 1):
             raise AttributeError('n_trig must equal 1 or n_frames')
         if not hw_trig:
@@ -219,7 +221,7 @@ class Xspress3(object):
         return arr
 
         
-    def read_scalers(self, starting_frame, n_frames):
+    def read_scalar_data(self, starting_frame, n_frames):
         """
         Reads the scalars and return various counts and dead time correction
         """
@@ -234,42 +236,35 @@ class Xspress3(object):
 
         # scalars (without any correction), which include window counts
         shape = (n_frames, self.num_chan, self.XSP3_SW_NUM_SCALERS)
-        scalers = np.frombuffer(buff, dtype=ctypes.c_uint32).reshape(shape)
+        scalars = np.frombuffer(buff, dtype=ctypes.c_uint32).reshape(shape)
 
         # for sake of self-documentation be explicit here:
-        ClockTicks = scalers[: ,:, 0]
-        ResetTicks = scalers[: ,:, 1]
-        ResetCount = scalers[: ,:, 2]
-        AllEvents  = scalers[: ,:, 3]
-        AllGood    = scalers[: ,:, 4]
-        #Pileup     = scalers[: ,:, 7]  #not used or validated
-        TotalTicks = scalers[: ,:, 8]  #real time
+        ClockTicks = scalars[: ,:, 0]
+        ResetTicks = scalars[: ,:, 1]
+        ResetCount = scalars[: ,:, 2]
+        AllEvents  = scalars[: ,:, 3]
+        AllGood    = scalars[: ,:, 4]
+        #Pileup     = scalars[: ,:, 7]  #not used or validated
+        TotalTicks = scalars[: ,:, 8]  #real time
         # window readings
-        win0       = scalers[:, :, 5]
-        win1       = scalers[:, :, 6]
+        win0       = scalars[:, :, 5]
+        win1       = scalars[:, :, 6]
 
         # According to QD, do not use xsp3_calculateDeadtimeCorrectionFactors but calculate deadtime as follows (a la Lima):
         # dtn  deadtime in clock ticks:      dtn = AllEvents*(Event_Width + 1) + ResetTicks
-        # dtc  deadtime fraction in percent: dtf = 100*DeadTicks / ClockTicks
-        # dtf  deadtime correction:          dtc = ClockTicks / (ClockTicks – DeadTicks) 
+        # dtf  deadtime fraction in percent: dtf = 100*DeadTicks / ClockTicks
+        # dtc  deadtime correction:          dtc = ClockTicks / (ClockTicks – DeadTicks) 
         # ocr  output count rate:            ocr = AllGood / TotalTicks * 1/80000000 (80MHz)  NB icr not defined
 
         shape = (n_frames, self.num_chan)
         dtn=np.zeros(shape)
-        dtf=np.zeros(shape)
         dtc=np.zeros(shape)
         ocr=np.zeros(shape)  #Note QD say ICR is not well defined
 
         for i in range(0,self.num_chan):
             dtn[:,i] = AllEvents[:, i]*(self.event_widths_l[i]+1) + ResetTicks[:, i]
-            dtf[:,i] = 100.0 * dtn[:,i] / ClockTicks[:, i]
             dtc[:,i] = ClockTicks[:, i] / (ClockTicks[:, i] - dtn[:,i])
-            ocr[:,i] = AllGood[:,i] / TotalTicks[:, i] * (1.0/80000000.0)
-
-        #print("dead ticks        ", dtn)
-        #print("dead percent      ", dtf)
-        #print("dead correction   ", dtc)
-        #print("output count rate ", ocr)
+            ocr[:,i] = AllGood[:,i] / TotalTicks[:, i] * (1.0/CLOCK_FREQUENCY)
 
         return win0, win1, AllEvents, AllGood, ClockTicks, TotalTicks, ResetTicks, dtc, ocr, np.asarray(self.event_widths_l)
 

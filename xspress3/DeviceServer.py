@@ -1,4 +1,4 @@
-from tango import DevState, Attr, SpectrumAttr
+from tango import DevState, Attr
 import PyTango
 from tango.server import Device, attribute, command, device_property
 from threading import Thread

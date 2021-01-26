@@ -80,7 +80,9 @@ class Streamer(Thread):
                     frame_info = {'starting_frame':sent_frames, 'n_frames':1}
                     data = self.instrument.read_hist_data(**frame_info)
                     # scalar data explicitly, plus event width
-                    win0, win1, AllEvents, AllGood, ClockTicks, TotalTicks, ResetTicks, dtc, ocr, event_widths = self.instrument.read_scalers(**frame_info)
+                    (win0, win1, AllEvents, AllGood, ClockTicks,
+                        TotalTicks, ResetTicks, dtc, ocr, event_widths
+                        ) = self.instrument.read_scalar_data(**frame_info)
 
                     # first send a header
                     self.data_sock.send_json({'htype': 'image',
