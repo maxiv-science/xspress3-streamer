@@ -37,6 +37,8 @@ ERROR_LOOKUP = {
 -14: 'XSP3_LOG_FILE_MISSING',
 -20: 'XSP3_WOULD_BLOCK',}
 
+CLOCK_FREQUENCY = 80e6 # 80 MHz
+
 class Xspress3(object):
     def __init__(self, ncards=1, maxframes=16384, baseip=None,
                  baseport=-1, basemac=None, nchan=-1, create_mod=-1,
@@ -76,6 +78,17 @@ class Xspress3(object):
         self.check(libxspress3.xsp3_restore_settings(self.handle, config_path.encode('ascii'), 0))
         self._latest_exptime = None
 
+        # Not in manual but used in Lima and needed to get event width in order to calculate dtc
+        # This is set from the calibration file in settings dir and read here from the hw
+        self.event_widths_l = []
+        for ch in range (0,self.num_chan):
+            Buff = ctypes.c_int * (27)
+            buff = Buff()
+            libxspress3.xsp3_get_trigger_b(self.handle, ch, buff)
+            arr = np.frombuffer(buff, dtype=ctypes.c_int)
+            self.event_widths_l.append(arr[13])
+
+
     def check(self, result):
         if (result == self.XSP3_OK) or (result > 0):
             return result
@@ -111,6 +124,13 @@ class Xspress3(object):
         Shut down.
         """
         self.check(libxspress3.xsp3_close(self.handle))
+
+    @property
+    def event_widths(self):
+        '''
+        The event width calibrated for each channel
+        '''
+        return self.event_widths_l
 
     @property
     def revision(self):
@@ -149,7 +169,7 @@ class Xspress3(object):
         print('Can fit %u frames' % fit_frames)
         self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
         self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, fit_frames))
-        cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * 80e6)) # time in 80 MHz clock cycles
+        cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * CLOCK_FREQUENCY)) # time in clock cycles
         if (n_trig != n_frames) and (n_trig != 1):
             raise AttributeError('n_trig must equal 1 or n_frames')
         if not hw_trig:
@@ -200,10 +220,12 @@ class Xspress3(object):
         arr = arr.reshape(shape)
         return arr
 
-    def read_scalars_raw(self, starting_frame, n_frames):
+        
+    def read_scalar_data(self, starting_frame, n_frames):
         """
-        Reads the scalars and returns the raw flat buffer.
+        Reads the scalars and return various counts and dead time correction
         """
+
         first_scalar, n_scalars = 0, self.XSP3_SW_NUM_SCALERS
         first_channel, n_channels = 0, self.num_chan
         Buff = ctypes.c_uint32 * (n_scalars * n_channels * n_frames)
@@ -211,27 +233,40 @@ class Xspress3(object):
         self.check(libxspress3.xsp3_scaler_read(self.handle, buff,
                                 first_scalar, first_channel, starting_frame,
                                 n_scalars, n_channels, n_frames))
-        return buff
 
-    def read_scalar_data(self, starting_frame=0, n_frames=None):
-        """
-        Reads recorded scalars and returns a reasonably shaped array.
-        Indexing goes as (frame, channel, scalar).
-        """
-        if n_frames is None:
-            n_frames = self.nframes_processed
-        buff = self.read_scalars_raw(starting_frame, n_frames)
+        # scalars (without any correction), which include window counts
         shape = (n_frames, self.num_chan, self.XSP3_SW_NUM_SCALERS)
-        return np.frombuffer(buff, dtype=ctypes.c_uint32).reshape(shape)
+        scalars = np.frombuffer(buff, dtype=ctypes.c_uint32).reshape(shape)
 
-    def read_window_data(self, *args, **kwargs):
-        """
-        Picks out the in-window counter data from the scalars. Gets and
-        converts the scalar buffer again, so use read_scalar_data if you
-        want to get all the numbers in one go.
-        """
-        scalars = self.read_scalar_data(*args, **kwargs)
-        return scalars[:, :, 5:7]
+        # for sake of self-documentation be explicit here:
+        ClockTicks = scalars[: ,:, 0]
+        ResetTicks = scalars[: ,:, 1]
+        ResetCount = scalars[: ,:, 2]
+        AllEvents  = scalars[: ,:, 3]
+        AllGood    = scalars[: ,:, 4]
+        #Pileup     = scalars[: ,:, 7]  #not used or validated
+        TotalTicks = scalars[: ,:, 8]  #real time
+        # window readings
+        win0       = scalars[:, :, 5]
+        win1       = scalars[:, :, 6]
+
+        # According to QD, do not use xsp3_calculateDeadtimeCorrectionFactors but calculate deadtime as follows (a la Lima):
+        # dtn  deadtime in clock ticks:      dtn = AllEvents*(Event_Width + 1) + ResetTicks
+        # dtf  deadtime fraction in percent: dtf = 100*DeadTicks / ClockTicks
+        # dtc  deadtime correction:          dtc = ClockTicks / (ClockTicks – DeadTicks) 
+        # ocr  output count rate:            ocr = AllGood / TotalTicks * 1/80000000 (80MHz)  NB icr not defined
+
+        shape = (n_frames, self.num_chan)
+        dtn=np.zeros(shape)
+        dtc=np.zeros(shape)
+        ocr=np.zeros(shape)  #Note QD say ICR is not well defined
+
+        for i in range(0,self.num_chan):
+            dtn[:,i] = AllEvents[:, i]*(self.event_widths_l[i]+1) + ResetTicks[:, i]
+            dtc[:,i] = ClockTicks[:, i] / (ClockTicks[:, i] - dtn[:,i])
+            ocr[:,i] = AllGood[:,i] / TotalTicks[:, i] * (1.0/CLOCK_FREQUENCY)
+
+        return win0, win1, AllEvents, AllGood, ClockTicks, TotalTicks, ResetTicks, dtc, ocr, np.asarray(self.event_widths_l)
 
     def clear_circular_buffer(self, starting_frame=0, n_frames=None):
         """
@@ -242,24 +277,6 @@ class Xspress3(object):
         first_channel, n_channels = 0, self.num_chan
         self.check(libxspress3.xsp3_histogram_circ_ack(self.handle,
             first_channel, starting_frame, n_channels, n_frames))
-
-    def calculate_dtc(self, starting_frame=0, n_frames=None):
-        """
-        Calculate dead time correction factor and estimated total input counts
-        from the acquired scalar values. Indexing goes as (frame, channel). This
-        is done on the raw buffer with an SDK call.
-        """
-        if n_frames is None:
-            n_frames = self.nframes_processed
-        buff = self.read_scalars_raw(starting_frame, n_frames)
-        Array = ctypes.c_double * n_frames * self.num_chan
-        dtc_params = Array()
-        total_input_counts = Array()
-        libxspress3.xsp3_calculateDeadtimeCorrectionFactors(self.handle, buff,
-                        dtc_params, total_input_counts, n_frames, 0, self.num_chan)
-        dtc = np.frombuffer(dtc_params, dtype=ctypes.c_double).reshape((n_frames, self.num_chan))
-        i0 = np.frombuffer(total_input_counts, dtype=ctypes.c_double).reshape((n_frames, self.num_chan))
-        return dtc, i0
 
     def set_window(self, channel=-1, low=0, high=None, window=0):
         """

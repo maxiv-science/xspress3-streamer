@@ -79,8 +79,11 @@ class Streamer(Thread):
                     # gather data
                     frame_info = {'starting_frame':sent_frames, 'n_frames':1}
                     data = self.instrument.read_hist_data(**frame_info)
-                    dtc, i0 = self.instrument.calculate_dtc(**frame_info)
-                    scalars = self.instrument.read_scalar_data(**frame_info)
+                    # scalar data explicitly, plus event width
+                    (win0, win1, AllEvents, AllGood, ClockTicks,
+                        TotalTicks, ResetTicks, dtc, ocr, event_widths
+                        ) = self.instrument.read_scalar_data(**frame_info)
+
                     # first send a header
                     self.data_sock.send_json({'htype': 'image',
                                          'exptime': self.instrument._latest_exptime,
@@ -96,9 +99,17 @@ class Streamer(Thread):
 
                     # then send the additional scalar info - a bit stupid to
                     # pickle like this, but takes ~100 us so it's ok.
-                    self.data_sock.send_pyobj({'deadtime_correction_factors': dtc[0],
-                                          'estimated_total_counts': i0[0],
-                                          'scalars': scalars[0]})
+                    self.data_sock.send_pyobj({'output_count_rate': ocr[0],
+                                               'all_events': AllEvents[0],
+                                               'all_good': AllGood[0],
+                                               'clock_ticks': ClockTicks[0],
+                                               'total_ticks': TotalTicks[0],
+                                               'reset_ticks': ResetTicks[0],
+                                               'event_width': event_widths,
+                                               'dead_time_correction': dtc[0],
+                                               'window_1': win0,
+                                               'window_2': win1})
+
                     sent_frames += 1
                     sent_last_to_monitor = False
                     if sent_frames == nframes:
