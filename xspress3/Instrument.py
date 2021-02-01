@@ -37,6 +37,7 @@ ERROR_LOOKUP = {
 -14: 'XSP3_LOG_FILE_MISSING',
 -20: 'XSP3_WOULD_BLOCK',}
 
+
 CLOCK_FREQUENCY = 80e6 # 80 MHz
 
 class Xspress3(object):
@@ -68,13 +69,14 @@ class Xspress3(object):
             self.XSP3_ITFG_GAP_MODE_200NS: 200-9,
             self.XSP3_ITFG_GAP_MODE_500NS: 500e-9,
             self.XSP3_ITFG_GAP_MODE_1US: 1e-6,}[self._gap_mode]
+
         self.check(libxspress3.xsp3_set_run_flags(self.handle,
-                    self.XSP3_RUN_FLAGS_HIST |
-                    self.XSP3_RUN_FLAGS_SCALERS |
-                    self.XSP3_RUN_FLAGS_CIRCULAR_BUFFER))
+                                                  self.XSP3_RUN_FLAGS_HIST |
+                                                  self.XSP3_RUN_FLAGS_SCALERS |
+                                                  self.XSP3_RUN_FLAGS_CIRCULAR_BUFFER))
         self.check(libxspress3.xsp3_clocks_setup(self.handle, 0, 
-                        self.XSP3_CLK_SRC_XTAL,
-                        self.XSP3_CLK_FLAGS_MASTER|self.XSP3_CLK_FLAGS_NO_DITHER, 0))
+                                                 self.XSP3_CLK_SRC_XTAL,
+                                                 self.XSP3_CLK_FLAGS_MASTER|self.XSP3_CLK_FLAGS_NO_DITHER, 0))
         self.check(libxspress3.xsp3_restore_settings(self.handle, config_path.encode('ascii'), 0))
         self._latest_exptime = None
 
@@ -88,6 +90,9 @@ class Xspress3(object):
             arr = np.frombuffer(buff, dtype=ctypes.c_int)
             self.event_widths_l.append(arr[13])
 
+        # window count data
+        self.window1_data = []
+        self.window2_data = []
 
     def check(self, result):
         if (result == self.XSP3_OK) or (result > 0):
@@ -164,8 +169,12 @@ class Xspress3(object):
         card:       (int) which card to use
         """
 
+        # reset window count data
+        self.window1_data = []
+        self.window2_data = []
+
         self._latest_exptime = frame_time - self._gap_time
-        fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)
+        fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)  #!! NB are we enabling or disablng pileup rejection?
         print('Can fit %u frames' % fit_frames)
         self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
         self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, fit_frames))
@@ -288,8 +297,9 @@ class Xspress3(object):
         """
         if high is None:
             high = self.bins_per_mca-1
+        #somehow low and high are numpy types which ctypes does not want
         self.check(libxspress3.xsp3_set_window(self.handle, channel,
-                                    window, low, high))
+                                               window, int(low), int(high)))
 
     def get_window(self, channel, window=0):
         low = ctypes.pointer(ctypes.c_uint32())

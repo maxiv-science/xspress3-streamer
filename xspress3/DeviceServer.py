@@ -1,4 +1,4 @@
-from tango import DevState, Attr
+from tango import DevState, Attr, SpectrumAttr
 import PyTango
 from tango.server import Device, attribute, command, device_property
 from threading import Thread
@@ -90,6 +90,7 @@ class Xspress3DS(Device, StandardDetector):
     BaseIP = device_property(dtype=str, default_value='', doc='IP from which to start counting.')
     BasePort = device_property(dtype=int, default_value=-1, doc='Port number from which to start counting.')
     BaseMAC = device_property(dtype=str, default_value='', doc='MAC from which to start counting.')
+    ReturnCounters = device_property(dtype=bool, default_value=False, doc='Counters available as Tango attributes.')
 
     def __init__(self, cl, name):
         Device.__init__(self, cl, name)
@@ -128,10 +129,94 @@ class Xspress3DS(Device, StandardDetector):
     def initialize_per_channel_attributes(self):
         nchans = self.streamer.instrument.num_chan
         for ch in range(0,nchans):
+            name = "Window1_Ch"+str(ch)
+            win1 = SpectrumAttr(name, PyTango.DevLong, PyTango.AttrWriteType.READ_WRITE,2) #attr value is [lo,hi]
+            self.add_attribute(attr=win1, r_meth=self.read_windows, w_meth=self.write_windows)
+            name = "Window2_Ch"+str(ch)
+            win2 = SpectrumAttr(name, PyTango.DevLong, PyTango.AttrWriteType.READ_WRITE,2) #attr value is [lo,hi]
+            self.add_attribute(attr=win2, r_meth=self.read_windows, w_meth=self.write_windows)
             #event width
             name = "EventWidth_Ch"+str(ch)
             ew = Attr(name, PyTango.DevShort, PyTango.AttrWriteType.READ)
             self.add_attribute(attr=ew, r_meth=self.read_event_widths)
+
+        # If required, counts in windows can be read directly from Tango e.g. by Sardana (they are always written to file)
+        if self.ReturnCounters:
+            cmd = command(f=self.ReadCounts_Window1, dtype_in=(int,), dtype_out=(int,), doc_in="channel, first frame, last frame", doc_out="window0 counts for requested channel for requested frames")
+            self.add_command(cmd, True)
+            cmd = command(f=self.ReadCounts_Window2, dtype_in=(int,), dtype_out=(int,), doc_in="channel, first frame, last frame", doc_out="window1 counts for requested channel for requested frames")
+            self.add_command(cmd, True)
+
+    def read_windows(self, attr):
+        attrname = attr.get_name()
+        ch = int(attrname.split("Ch")[1])
+        self.debug_stream("Reading window settings for %s " % attrname)
+        if "Window1" in attrname:
+            lo, hi = self.streamer.instrument.get_window(ch,0) #window 1 = 0th window
+            self.debug_stream("Return Window1 information for channel %d: (%d, %d) " % (ch, lo, hi))
+            attr.set_value([lo,hi])
+        else:
+            lo, hi = self.streamer.instrument.get_window(ch,1) #window 2 = 1st window
+            self.debug_stream("Return Window2 information for channel %d: (%d, %d) " % (ch, lo, hi))
+            attr.set_value([lo,hi])
+
+    def write_windows(self, attr):
+        attrname = attr.get_name()
+        ch = int(attrname.split("Ch")[1])
+        attrval = attr.get_write_value()
+        lo = attrval[0]
+        hi = attrval[1]
+        if hi>4095:
+            hi=4095
+        if lo<0:
+            lo=0
+        self.debug_stream("Writing window settings for %s (%d, %d)" % (attrname, lo, hi))
+        if "Window1" in attrname:
+            self.streamer.instrument.set_window(ch,lo,hi,0)
+        else:
+            self.streamer.instrument.set_window(ch,lo,hi,1)
+
+    def ReadCounts_Window1(self, arg):
+        channel = int(arg[0])
+        first_frame = int(arg[1])
+        last_frame = int(arg[2])
+        return self.ReadCounts(1,channel,first_frame,last_frame)
+
+    def ReadCounts_Window2(self, arg):
+        channel = int(arg[0])
+        first_frame = int(arg[1])
+        last_frame = int(arg[2])
+        return self.ReadCounts(2,channel,first_frame,last_frame)
+
+    def ReadCounts(self, window, chan, first, last):
+
+        self.debug_stream("ReadCounts in Window: %d" % window)
+
+        range = last - first + 1
+        chan_counts = [-1]*range  # return array of data of appropriate size even if some frames not ready
+
+        if self.streamer.instrument.nframes_processed == 0:
+            self.debug_stream("Request ReadCounts in Window %d for frames %d-%d but 0 frames acquired" % (window, first, last))
+
+        elif first > self.streamer.instrument.nframes_processed:
+            self.debug_stream("Request ReadCounts in Window %d for frames %d-%d but only %d frames acquired " % (window, first,last,self.streamer.instrument.nframes_processed))
+            
+        elif first <= self.streamer.instrument.nframes_processed and last > self.streamer.instrument.nframes_processed:
+            self.debug_stream("Request ReadCounts in Window %d for frames %d-%d but last frame available is %d " % (window, first,last,self.streamer.instrument.nframes_processed))
+
+        if(window==1):
+            requested_data = self.streamer.instrument.window1_data[first-1:last]  # e.g to frame i means pass [lo=i,hi=i] which is i-1:i since count from 0
+        else:
+            requested_data = self.streamer.instrument.window2_data[first-1:last]  
+
+        # Ugly extraction from list of arrays but seems fast, few ms for 1000 triggers (cf 80ms to readScalars in Lima for one frame)
+        for trigger, frame_data in enumerate(requested_data):
+            frame_data_for_channel = frame_data[chan]
+            chan_counts[trigger]=frame_data_for_channel
+
+        print("chan counts", chan_counts)
+        return chan_counts
+
 
     def read_event_widths(self, attr):
         attrname = attr.get_name()
