@@ -45,7 +45,9 @@ class Xspress3(object):
                  baseport=-1, basemac=None, nchan=-1, create_mod=-1,
                  name=None, debug=-1, cardindex=-1,
                  header_path='/opt/xspress3-sdk/include',
-                 config_path='/home/xspress3/settings',):
+                 config_path='/home/xspress3/settings',
+                 return_window_counts=False,
+                 event_widths_prop={}):
         """
         The C constructor takes -1 and NULL for defaults everywhere
         for ints/*chars, respectively.
@@ -81,16 +83,22 @@ class Xspress3(object):
         self._latest_exptime = None
 
         # Not in manual but used in Lima and needed to get event width in order to calculate dtc
-        # This is set from the calibration file in settings dir and read here from the hw
+        # This is set from the calibration file in settings dir and read here from the hw...
         self.event_widths_l = []
-        for ch in range (0,self.num_chan):
-            Buff = ctypes.c_int * (27)
-            buff = Buff()
-            libxspress3.xsp3_get_trigger_b(self.handle, ch, buff)
-            arr = np.frombuffer(buff, dtype=ctypes.c_int)
-            self.event_widths_l.append(arr[13])
+        if event_widths_prop == {} or len(event_widths_prop)!=self.num_chan:
+            for ch in range (0,self.num_chan):
+                Buff = ctypes.c_int * (27)
+                buff = Buff()
+                libxspress3.xsp3_get_trigger_b(self.handle, ch, buff)
+                arr = np.frombuffer(buff, dtype=ctypes.c_int)
+                self.event_widths_l.append(arr[13])
+        # ...OR it is set from property
+        else:
+            for ch in range (0,self.num_chan):
+                self.event_widths_l.append(event_widths_prop[ch])
 
         # window count data
+        self.sum_window_counts = return_window_counts
         self.window1_data = []
         self.window2_data = []
 

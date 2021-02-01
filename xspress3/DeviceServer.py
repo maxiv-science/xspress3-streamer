@@ -91,6 +91,7 @@ class Xspress3DS(Device, StandardDetector):
     BasePort = device_property(dtype=int, default_value=-1, doc='Port number from which to start counting.')
     BaseMAC = device_property(dtype=str, default_value='', doc='MAC from which to start counting.')
     ReturnCounters = device_property(dtype=bool, default_value=False, doc='Counters available as Tango attributes.')
+    EventWidths = device_property(dtype=(int,), default_value=[], doc='Per channel event width to override calibration.')
 
     def __init__(self, cl, name):
         Device.__init__(self, cl, name)
@@ -101,13 +102,25 @@ class Xspress3DS(Device, StandardDetector):
     def init_device(self):
         self.set_state(DevState.INIT)
         self.get_device_properties() # now available as attributes on self
+
+        #check if event width set via property (ie overridden calibration)
+        self.custom_event_widths = {}
+        self.debug_stream("Event widths read from properties")
+        for i, v in enumerate(self.EventWidths):
+            self.custom_event_widths[i]=v
+        else:
+            self.debug_stream("Event widths read from hw (calibration")
+
         if hasattr(self, 'streamer'):
             self.streamer.q.put('kill')
             del self.streamer
         instr = Xspress3(baseip=self.BaseIP, basemac=self.BaseMAC,
                          baseport=self.BasePort,
                          name=self.Name, header_path=self.HeaderPath,
-                         config_path=self.ConfigPath)
+                         config_path=self.ConfigPath,
+                         return_window_counts=self.ReturnCounters,
+                         event_widths_prop = self.custom_event_widths)
+    
         self.streamer = Streamer(instrument=instr, data_port=self.StreamerPort, monitor_port=self.MonitorPort)
         self.streamer.start()
         
@@ -131,10 +144,10 @@ class Xspress3DS(Device, StandardDetector):
         for ch in range(0,nchans):
             name = "Window1_Ch"+str(ch)
             win1 = SpectrumAttr(name, PyTango.DevLong, PyTango.AttrWriteType.READ_WRITE,2) #attr value is [lo,hi]
-            self.add_attribute(attr=win1, r_meth=self.read_windows, w_meth=self.write_windows)
+            self.add_attribute(attr=win1, r_meth=self.read_window_config, w_meth=self.write_window_config)
             name = "Window2_Ch"+str(ch)
             win2 = SpectrumAttr(name, PyTango.DevLong, PyTango.AttrWriteType.READ_WRITE,2) #attr value is [lo,hi]
-            self.add_attribute(attr=win2, r_meth=self.read_windows, w_meth=self.write_windows)
+            self.add_attribute(attr=win2, r_meth=self.read_window_config, w_meth=self.write_window_config)
             #event width
             name = "EventWidth_Ch"+str(ch)
             ew = Attr(name, PyTango.DevShort, PyTango.AttrWriteType.READ)
@@ -147,7 +160,7 @@ class Xspress3DS(Device, StandardDetector):
             cmd = command(f=self.ReadCounts_Window2, dtype_in=(int,), dtype_out=(int,), doc_in="channel, first frame, last frame", doc_out="window1 counts for requested channel for requested frames")
             self.add_command(cmd, True)
 
-    def read_windows(self, attr):
+    def read_window_config(self, attr):
         attrname = attr.get_name()
         ch = int(attrname.split("Ch")[1])
         self.debug_stream("Reading window settings for %s " % attrname)
@@ -160,7 +173,7 @@ class Xspress3DS(Device, StandardDetector):
             self.debug_stream("Return Window2 information for channel %d: (%d, %d) " % (ch, lo, hi))
             attr.set_value([lo,hi])
 
-    def write_windows(self, attr):
+    def write_window_config(self, attr):
         attrname = attr.get_name()
         ch = int(attrname.split("Ch")[1])
         attrval = attr.get_write_value()
@@ -180,15 +193,15 @@ class Xspress3DS(Device, StandardDetector):
         channel = int(arg[0])
         first_frame = int(arg[1])
         last_frame = int(arg[2])
-        return self.ReadCounts(1,channel,first_frame,last_frame)
+        return self.read_counts(1,channel,first_frame,last_frame)
 
     def ReadCounts_Window2(self, arg):
         channel = int(arg[0])
         first_frame = int(arg[1])
         last_frame = int(arg[2])
-        return self.ReadCounts(2,channel,first_frame,last_frame)
+        return self.read_counts(2,channel,first_frame,last_frame)
 
-    def ReadCounts(self, window, chan, first, last):
+    def read_counts(self, window, chan, first, last):
 
         self.debug_stream("ReadCounts in Window: %d" % window)
 
@@ -214,7 +227,6 @@ class Xspress3DS(Device, StandardDetector):
             frame_data_for_channel = frame_data[chan]
             chan_counts[trigger]=frame_data_for_channel
 
-        print("chan counts", chan_counts)
         return chan_counts
 
 
@@ -222,8 +234,12 @@ class Xspress3DS(Device, StandardDetector):
         attrname = attr.get_name()
         ch = int(attrname.split("Ch")[1])
         self.debug_stream("Reading event width setting for %s " % attrname)
-        width = self.streamer.instrument.event_widths[ch]
-        attr.set_value(width)
+        if self.custom_event_widths == {} or len(self.custom_event_widths)!=self.streamer.instrument.num_chan:
+            self.debug_stream("Channel %d has calibrated event width " % ch)
+            attr.set_value(self.streamer.instrument.event_widths[ch])
+        else:
+            self.debug_stream("Channel %d has custom event width property " % ch)
+            attr.set_value(self.custom_event_widths[ch])
 
     @attribute(dtype=bool, doc="The device can optionally receive its own stream and write it to hdf5.")
     def WriteHdf5(self):
