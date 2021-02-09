@@ -97,10 +97,12 @@ class Xspress3(object):
             for ch in range (0,self.num_chan):
                 self.event_widths_l.append(event_widths_prop[ch])
 
-        # window count data
+        # window count data - these are filled by the streamer
         self.sum_window_counts = return_window_counts
-        self.window1_data = []
-        self.window2_data = []
+        self.window1_data_raw = []
+        self.window2_data_raw = []
+        self.window1_data_dtc = []
+        self.window2_data_dtc = []
 
     def check(self, result):
         if (result == self.XSP3_OK) or (result > 0):
@@ -178,8 +180,10 @@ class Xspress3(object):
         """
 
         # reset window count data
-        self.window1_data = []
-        self.window2_data = []
+        self.window1_data_raw = []
+        self.window2_data_raw = []
+        self.window1_data_dtc = []
+        self.window2_data_dtc = []
 
         self._latest_exptime = frame_time - self._gap_time
         fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)  #!! NB are we enabling or disablng pileup rejection?

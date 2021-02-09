@@ -1,5 +1,6 @@
 from tango import DevState, Attr, SpectrumAttr
 import PyTango
+import numpy as np
 from tango.server import Device, attribute, command, device_property
 from threading import Thread
 
@@ -155,9 +156,13 @@ class Xspress3DS(Device, StandardDetector):
 
         # If required, counts in windows can be read directly from Tango e.g. by Sardana (they are always written to file)
         if self.ReturnCounters:
-            cmd = command(f=self.ReadCounts_Window1, dtype_in=(int,), dtype_out=(int,), doc_in="channel, first frame, last frame", doc_out="window0 counts for requested channel for requested frames")
+            cmd = command(f=self.ReadRawCounts_Window1, dtype_in=(int,), dtype_out=(int,), doc_in="channel, first frame, last frame", doc_out="window0 raw counts for requested channel for requested frames")
             self.add_command(cmd, True)
-            cmd = command(f=self.ReadCounts_Window2, dtype_in=(int,), dtype_out=(int,), doc_in="channel, first frame, last frame", doc_out="window1 counts for requested channel for requested frames")
+            cmd = command(f=self.ReadRawCounts_Window2, dtype_in=(int,), dtype_out=(int,), doc_in="channel, first frame, last frame", doc_out="window1 raw counts for requested channel for requested frames")
+            self.add_command(cmd, True)
+            cmd = command(f=self.ReadDtcCounts_Window1, dtype_in=(int,), dtype_out=(float,), doc_in="channel, first frame, last frame", doc_out="window0 dead time corrected counts for requested channel for requested frames")
+            self.add_command(cmd, True)
+            cmd = command(f=self.ReadDtcCounts_Window2, dtype_in=(int,), dtype_out=(float,), doc_in="channel, first frame, last frame", doc_out="window1 dead time corrected counts for requested channel for requested frames")
             self.add_command(cmd, True)
 
     def read_window_config(self, attr):
@@ -189,45 +194,58 @@ class Xspress3DS(Device, StandardDetector):
         else:
             self.streamer.instrument.set_window(ch,lo,hi,1)
 
-    def ReadCounts_Window1(self, arg):
-        channel = int(arg[0])
-        first_frame = int(arg[1])
-        last_frame = int(arg[2])
-        return self.read_counts(1,channel,first_frame,last_frame)
+    def ReadRawCounts_Window1(self, arg):
+        channel, first_frame, last_frame = int(arg[0]),int(arg[1]),int(arg[2])
+        return self.read_counts(1,channel,first_frame,last_frame,dtc=False)
 
-    def ReadCounts_Window2(self, arg):
-        channel = int(arg[0])
-        first_frame = int(arg[1])
-        last_frame = int(arg[2])
-        return self.read_counts(2,channel,first_frame,last_frame)
+    def ReadRawCounts_Window2(self, arg):
+        channel, first_frame, last_frame = int(arg[0]),int(arg[1]),int(arg[2])
+        return self.read_counts(2,channel,first_frame,last_frame,dtc=False)
 
-    def read_counts(self, window, chan, first, last):
+    def ReadDtcCounts_Window1(self, arg):
+        channel, first_frame, last_frame = int(arg[0]),int(arg[1]),int(arg[2])
+        return self.read_counts(1,channel,first_frame,last_frame,dtc=True)
+
+    def ReadDtcCounts_Window2(self, arg):
+        channel, first_frame, last_frame = int(arg[0]),int(arg[1]),int(arg[2])
+        return self.read_counts(2,channel,first_frame,last_frame,dtc=True)
+
+    def read_counts(self, window, chan, first, last, dtc=False):
 
         self.debug_stream("ReadCounts in Window: %d" % window)
 
         range = last - first + 1
-        chan_counts = [-1]*range  # return array of data of appropriate size even if some frames not ready
+        if dtc:
+            chan_counts = [-1.0]*range  # return array of data of appropriate size even if some frames not ready...
+        else:
+            chan_counts = [-1]*range  # ...floats if dead time corrected otherwise ints
 
         if self.streamer.instrument.nframes_processed == 0:
-            self.debug_stream("Request ReadCounts in Window %d for frames %d-%d but 0 frames acquired" % (window, first, last))
+            self.debug_stream("read_counts in Window %d for frames %d-%d but 0 frames acquired" % (window, first, last))
 
         elif first > self.streamer.instrument.nframes_processed:
-            self.debug_stream("Request ReadCounts in Window %d for frames %d-%d but only %d frames acquired " % (window, first,last,self.streamer.instrument.nframes_processed))
+            self.debug_stream("read_counts in Window %d for frames %d-%d but only %d frames acquired " % (window, first,last,self.streamer.instrument.nframes_processed))
             
         elif first <= self.streamer.instrument.nframes_processed and last > self.streamer.instrument.nframes_processed:
-            self.debug_stream("Request ReadCounts in Window %d for frames %d-%d but last frame available is %d " % (window, first,last,self.streamer.instrument.nframes_processed))
+            self.debug_stream("read_counts in Window %d for frames %d-%d but last frame available is %d " % (window, first,last,self.streamer.instrument.nframes_processed))
 
         if(window==1):
-            requested_data = self.streamer.instrument.window1_data[first-1:last]  # e.g to frame i means pass [lo=i,hi=i] which is i-1:i since count from 0
+            if dtc:
+                requested_data = self.streamer.instrument.window1_data_dtc[first-1:last]  # e.g frame i means pass [lo=i,hi=i] which is i-1:i since count from 0
+            else:
+                requested_data = self.streamer.instrument.window1_data_raw[first-1:last]  # e.g frame i means pass [lo=i,hi=i] which is i-1:i since count from 0
         else:
-            requested_data = self.streamer.instrument.window2_data[first-1:last]  
+            if dtc:
+                requested_data = self.streamer.instrument.window2_data_dtc[first-1:last]  
+            else:
+                requested_data = self.streamer.instrument.window2_data_raw[first-1:last]  
 
         # Ugly extraction from list of arrays but seems fast, few ms for 1000 triggers (cf 80ms to readScalars in Lima for one frame)
         for trigger, frame_data in enumerate(requested_data):
             frame_data_for_channel = frame_data[chan]
             chan_counts[trigger]=frame_data_for_channel
 
-        return chan_counts
+        return np.nan_to_num(chan_counts) # in case dtc was 0 giving a nan which Tango does not like
 
 
     def read_event_widths(self, attr):

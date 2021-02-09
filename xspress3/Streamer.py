@@ -85,8 +85,10 @@ class Streamer(Thread):
                         ) = self.instrument.read_scalar_data(**frame_info)
 
                     if self.instrument.sum_window_counts==True:
-                        self.instrument.window1_data.append(win0[0]) # 0th element since read one frame at a time
-                        self.instrument.window2_data.append(win1[0])  
+                        self.instrument.window1_data_raw.append(win0[0]) # 0th element since read one frame at a time
+                        self.instrument.window2_data_raw.append(win1[0])  
+                        self.instrument.window1_data_dtc.append(win0[0]*dtc[0])
+                        self.instrument.window2_data_dtc.append(win1[0]*dtc[0])  
 
                     # first send a header
                     self.data_sock.send_json({'htype': 'image',
