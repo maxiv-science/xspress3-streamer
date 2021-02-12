@@ -37,6 +37,7 @@ ERROR_LOOKUP = {
 -14: 'XSP3_LOG_FILE_MISSING',
 -20: 'XSP3_WOULD_BLOCK',}
 
+
 CLOCK_FREQUENCY = 80e6 # 80 MHz
 
 class Xspress3(object):
@@ -44,7 +45,9 @@ class Xspress3(object):
                  baseport=-1, basemac=None, nchan=-1, create_mod=-1,
                  name=None, debug=-1, cardindex=-1,
                  header_path='/opt/xspress3-sdk/include',
-                 config_path='/home/xspress3/settings',):
+                 config_path='/home/xspress3/settings',
+                 return_window_counts=False,
+                 event_widths_override={}):
         """
         The C constructor takes -1 and NULL for defaults everywhere
         for ints/*chars, respectively.
@@ -68,26 +71,39 @@ class Xspress3(object):
             self.XSP3_ITFG_GAP_MODE_200NS: 200-9,
             self.XSP3_ITFG_GAP_MODE_500NS: 500e-9,
             self.XSP3_ITFG_GAP_MODE_1US: 1e-6,}[self._gap_mode]
+
         self.check(libxspress3.xsp3_set_run_flags(self.handle,
-                    self.XSP3_RUN_FLAGS_HIST |
-                    self.XSP3_RUN_FLAGS_SCALERS |
-                    self.XSP3_RUN_FLAGS_CIRCULAR_BUFFER))
+                                self.XSP3_RUN_FLAGS_HIST |
+                                self.XSP3_RUN_FLAGS_SCALERS |
+                                self.XSP3_RUN_FLAGS_CIRCULAR_BUFFER))
         self.check(libxspress3.xsp3_clocks_setup(self.handle, 0, 
-                        self.XSP3_CLK_SRC_XTAL,
-                        self.XSP3_CLK_FLAGS_MASTER|self.XSP3_CLK_FLAGS_NO_DITHER, 0))
+                                self.XSP3_CLK_SRC_XTAL,
+                                self.XSP3_CLK_FLAGS_MASTER |
+                                self.XSP3_CLK_FLAGS_NO_DITHER, 0))
         self.check(libxspress3.xsp3_restore_settings(self.handle, config_path.encode('ascii'), 0))
         self._latest_exptime = None
 
         # Not in manual but used in Lima and needed to get event width in order to calculate dtc
-        # This is set from the calibration file in settings dir and read here from the hw
+        # This is set from the calibration file in settings dir and read here from the hw...
         self.event_widths_l = []
-        for ch in range (0,self.num_chan):
-            Buff = ctypes.c_int * (27)
-            buff = Buff()
-            libxspress3.xsp3_get_trigger_b(self.handle, ch, buff)
-            arr = np.frombuffer(buff, dtype=ctypes.c_int)
-            self.event_widths_l.append(arr[13])
+        if event_widths_override == {} or len(event_widths_override)!=self.num_chan:
+            for ch in range (0,self.num_chan):
+                Buff = ctypes.c_int * (27)
+                buff = Buff()
+                libxspress3.xsp3_get_trigger_b(self.handle, ch, buff)
+                arr = np.frombuffer(buff, dtype=ctypes.c_int)
+                self.event_widths_l.append(arr[13])
+        # ...OR it is set from property
+        else:
+            for ch in range (0,self.num_chan):
+                self.event_widths_l.append(event_widths_override[ch])
 
+        # window count data - these are filled by the streamer
+        self.sum_window_counts = return_window_counts
+        self.window1_data_raw = []
+        self.window2_data_raw = []
+        self.window1_data_dtc = []
+        self.window2_data_dtc = []
 
     def check(self, result):
         if (result == self.XSP3_OK) or (result > 0):
@@ -163,6 +179,12 @@ class Xspress3(object):
         hw_trig:    (bool) whether to expect HW triggers
         card:       (int) which card to use
         """
+
+        # reset window count data
+        self.window1_data_raw = []
+        self.window2_data_raw = []
+        self.window1_data_dtc = []
+        self.window2_data_dtc = []
 
         self._latest_exptime = frame_time - self._gap_time
         fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)
@@ -288,8 +310,9 @@ class Xspress3(object):
         """
         if high is None:
             high = self.bins_per_mca-1
+        #somehow low and high are numpy types which ctypes does not want
         self.check(libxspress3.xsp3_set_window(self.handle, channel,
-                                    window, low, high))
+                                               window, int(low), int(high)))
 
     def get_window(self, channel, window=0):
         low = ctypes.pointer(ctypes.c_uint32())
