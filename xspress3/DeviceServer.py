@@ -120,7 +120,7 @@ class Xspress3DS(Device, StandardDetector):
                          name=self.Name, header_path=self.HeaderPath,
                          config_path=self.ConfigPath,
                          return_window_counts=self.ReturnCounters,
-                         event_widths_prop = self.custom_event_widths)
+                         event_widths_override = self.custom_event_widths)
     
         self.streamer = Streamer(instrument=instr, data_port=self.StreamerPort, monitor_port=self.MonitorPort)
         self.streamer.start()

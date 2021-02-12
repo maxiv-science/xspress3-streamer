@@ -47,7 +47,7 @@ class Xspress3(object):
                  header_path='/opt/xspress3-sdk/include',
                  config_path='/home/xspress3/settings',
                  return_window_counts=False,
-                 event_widths_prop={}):
+                 event_widths_override={}):
         """
         The C constructor takes -1 and NULL for defaults everywhere
         for ints/*chars, respectively.
@@ -73,19 +73,20 @@ class Xspress3(object):
             self.XSP3_ITFG_GAP_MODE_1US: 1e-6,}[self._gap_mode]
 
         self.check(libxspress3.xsp3_set_run_flags(self.handle,
-                                                  self.XSP3_RUN_FLAGS_HIST |
-                                                  self.XSP3_RUN_FLAGS_SCALERS |
-                                                  self.XSP3_RUN_FLAGS_CIRCULAR_BUFFER))
+                                self.XSP3_RUN_FLAGS_HIST |
+                                self.XSP3_RUN_FLAGS_SCALERS |
+                                self.XSP3_RUN_FLAGS_CIRCULAR_BUFFER))
         self.check(libxspress3.xsp3_clocks_setup(self.handle, 0, 
-                                                 self.XSP3_CLK_SRC_XTAL,
-                                                 self.XSP3_CLK_FLAGS_MASTER|self.XSP3_CLK_FLAGS_NO_DITHER, 0))
+                                self.XSP3_CLK_SRC_XTAL,
+                                self.XSP3_CLK_FLAGS_MASTER |
+                                self.XSP3_CLK_FLAGS_NO_DITHER, 0))
         self.check(libxspress3.xsp3_restore_settings(self.handle, config_path.encode('ascii'), 0))
         self._latest_exptime = None
 
         # Not in manual but used in Lima and needed to get event width in order to calculate dtc
         # This is set from the calibration file in settings dir and read here from the hw...
         self.event_widths_l = []
-        if event_widths_prop == {} or len(event_widths_prop)!=self.num_chan:
+        if event_widths_override == {} or len(event_widths_override)!=self.num_chan:
             for ch in range (0,self.num_chan):
                 Buff = ctypes.c_int * (27)
                 buff = Buff()
@@ -95,7 +96,7 @@ class Xspress3(object):
         # ...OR it is set from property
         else:
             for ch in range (0,self.num_chan):
-                self.event_widths_l.append(event_widths_prop[ch])
+                self.event_widths_l.append(event_widths_override[ch])
 
         # window count data - these are filled by the streamer
         self.sum_window_counts = return_window_counts
@@ -186,7 +187,7 @@ class Xspress3(object):
         self.window2_data_dtc = []
 
         self._latest_exptime = frame_time - self._gap_time
-        fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)  #!! NB are we enabling or disablng pileup rejection?
+        fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)
         print('Can fit %u frames' % fit_frames)
         self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
         self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, fit_frames))
