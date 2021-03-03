@@ -65,7 +65,7 @@ class StandardDetector(object):
 
     @TriggerMode.setter
     def TriggerMode(self, val):
-        valid = ['SOFTWARE', 'EXTERNAL']
+        valid = ['SOFTWARE', 'EXTERNAL_MULTI', 'EXTERNAL_MULTI_GATE']
         assert (val in valid), 'TriggerMode can be %s'%(' or '.join(valid))
         self._triggermode = val
 
@@ -294,12 +294,12 @@ class Xspress3DS(Device, StandardDetector):
             self.hdf_thread = Thread(target=self.hdf_writer.run)
             self.hdf_thread.start()
         self._swtrigs = 0
-        nframes = self._nframespertrigger * self._ntriggers
+        nframes = self._nframespertrigger * self._ntriggers # either ntrigs or nframespertrigger must be one
         self.streamer.instrument.acquire_frames(
             frame_time=self._exposuretime-self._latencytime,
             n_frames=nframes,
             n_trig=self._ntriggers,
-            hw_trig=(self._triggermode=='EXTERNAL'),
+            trig_mode=self._triggermode,
             card=0,)
         dest = self._destinationfilename if self._destinationfilename else 'None'
         self.streamer.q.put('start %s %u' % (dest, nframes))

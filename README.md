@@ -9,7 +9,6 @@ This package provides
 - Direct readback of histogram and scalar data over Tango.
 - Expose window counters (aka ROI:s).
 - Enable recording only part of the spectrum (what the SDK calls ROI:s).
-- Gated triggering (not timing frames by the internal clock).
 
 ## Pipeline overview
 
