@@ -1,8 +1,10 @@
 from tango import DevState, Attr, SpectrumAttr
 import PyTango
 import numpy as np
+import time
 from tango.server import Device, attribute, command, device_property
 from threading import Thread
+
 
 if __name__ == '__main__':
     from xspress3.Streamer import Streamer
@@ -214,6 +216,9 @@ class Xspress3DS(Device, StandardDetector):
 
         self.debug_stream("ReadCounts in Window: %d" % window)
 
+        if first<1:  #lowest frame number is frame 1
+            first=1
+
         range = last - first + 1
         if dtc:
             chan_counts = [-1.0]*range  # return array of data of appropriate size even if some frames not ready...
@@ -222,23 +227,33 @@ class Xspress3DS(Device, StandardDetector):
 
         if self.streamer.instrument.nframes_processed == 0:
             self.debug_stream("read_counts in Window %d for frames %d-%d but 0 frames acquired" % (window, first, last))
+            return chan_counts
 
         elif first > self.streamer.instrument.nframes_processed:
             self.debug_stream("read_counts in Window %d for frames %d-%d but only %d frames acquired " % (window, first,last,self.streamer.instrument.nframes_processed))
-            
+            return chan_counts
+
         elif first <= self.streamer.instrument.nframes_processed and last > self.streamer.instrument.nframes_processed:
             self.debug_stream("read_counts in Window %d for frames %d-%d but last frame available is %d " % (window, first,last,self.streamer.instrument.nframes_processed))
+            last = self.streamer.instrument.nframes_processed
 
-        if(window==1):
-            if dtc:
-                requested_data = self.streamer.instrument.window1_data_dtc[first-1:last]  # e.g frame i means pass [lo=i,hi=i] which is i-1:i since count from 0
+        read=False
+        while read==False:  # array is filled in separate thread, and we may ask too soon...
+            time.sleep(self._exposuretime/10.0)
+            if(window==1):
+                if dtc:
+                    requested_data = self.streamer.instrument.window1_data_dtc[first-1:last]  # e.g frame i means pass [lo=i,hi=i] which is i-1:i since count from 0
+                else:
+                    requested_data = self.streamer.instrument.window1_data_raw[first-1:last]  # e.g frame i means pass [lo=i,hi=i] which is i-1:i since count from 0
             else:
-                requested_data = self.streamer.instrument.window1_data_raw[first-1:last]  # e.g frame i means pass [lo=i,hi=i] which is i-1:i since count from 0
-        else:
-            if dtc:
-                requested_data = self.streamer.instrument.window2_data_dtc[first-1:last]  
-            else:
-                requested_data = self.streamer.instrument.window2_data_raw[first-1:last]  
+                if dtc:
+                    requested_data = self.streamer.instrument.window2_data_dtc[first-1:last]  
+                else:
+                    requested_data = self.streamer.instrument.window2_data_raw[first-1:last]  
+            if len(requested_data)==last-first+1: # if we have the data we expect
+                read=True
+
+        #print("Leave WHILE", len(requested_data), self.streamer.instrument.nframes_processed, first, last, last-first+1)
 
         # Ugly extraction from list of arrays but seems fast, few ms for 1000 triggers (cf 80ms to readScalars in Lima for one frame)
         for trigger, frame_data in enumerate(requested_data):

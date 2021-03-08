@@ -34,7 +34,7 @@ class DummyReceiver(object):
                 buff = self.sock.recv()
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
-                extra = self.sock.recv_pyobj()
+                #extra = self.sock.recv_pyobj()
                 frames_since_last_print += 1
                 frames_total += 1
                 # print some output sometimes
@@ -55,6 +55,9 @@ class WritingReceiver(DummyReceiver):
     Receiver which reads from the data PUB socket and writes to hdf5.
     """
     def run(self):
+        # fields in extra data
+        names=['output_count_rate','all_events','all_good','clock_ticks','total_ticks','reset_ticks','event_width','dead_time_correction','frame']
+
         dsp = 'disposable' if self.disposable else 'persistent'
         self.print('%s writer running'%dsp)
         last_print = 0.
@@ -81,20 +84,23 @@ class WritingReceiver(DummyReceiver):
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
                 extra = self.sock.recv_pyobj()
-                extra['frames'] = frame
+                extra.append(frame) # the actual data
                 if fn:
                     if meta['frame'] == 0:
                         #create datasets
-                        for name, arr in extra.items():
-                            d = fp.create_dataset(name, shape=(1,)+arr.shape, maxshape=(None,)+arr.shape, dtype=arr.dtype)
-                            d[:] = arr
+                        for i, item in enumerate(extra):
+                            print(i,item,type(item))
+                            d = fp.create_dataset(names[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype)
+                            d[:] = item
                     else:
+                        pass
+                        now=time.time()
                         #expand datasets
-                        for name, arr in extra.items():
-                            d = fp[name]
+                        for i, item in enumerate(extra):
+                            d = fp[names[i]]
                             old = d.shape[0]
                             d.resize((old+1,) + d.shape[1:])
-                            d[old:] = arr
+                            d[old:] = item
                 # print some output
                 if (time.time() - last_print) > 1.:
                     self.print('WritingReceiver: got %u new frames (total %u)'
