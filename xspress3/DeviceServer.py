@@ -28,6 +28,7 @@ class StandardDetector(object):
         self._latencytime = 0.
         self._triggermode = 'SOFTWARE'
         self._destinationfilename = '/tmp/temp.h5'
+        self._stopped = False
 
     @attribute(dtype=float, format='%e')
     def ExposureTime(self):
@@ -117,13 +118,19 @@ class Xspress3DS(Device, StandardDetector):
         if hasattr(self, 'streamer'):
             self.streamer.q.put('kill')
             del self.streamer
-        instr = Xspress3(baseip=self.BaseIP, basemac=self.BaseMAC,
-                         baseport=self.BasePort,
-                         name=self.Name, header_path=self.HeaderPath,
-                         config_path=self.ConfigPath,
-                         return_window_counts=self.ReturnCounters,
-                         event_widths_override = self.custom_event_widths)
-    
+        try:
+            instr = Xspress3(baseip=self.BaseIP, basemac=self.BaseMAC,
+                             baseport=self.BasePort,
+                             name=self.Name, header_path=self.HeaderPath,
+                             config_path=self.ConfigPath,
+                             return_window_counts=self.ReturnCounters,
+                             event_widths_override = self.custom_event_widths)
+        except Exception as e:
+            self.debug_stream(str(e))
+            self.set_state(DevState.FAULT)
+            self.set_status(str(e))
+            return     
+
         self.streamer = Streamer(instrument=instr, data_port=self.StreamerPort, monitor_port=self.MonitorPort)
         self.streamer.start()
         
@@ -238,6 +245,7 @@ class Xspress3DS(Device, StandardDetector):
             last = self.streamer.instrument.nframes_processed
 
         read=False
+        requested_data = []
         while read==False:  # array is filled in separate thread, and we may ask too soon...
             time.sleep(self._exposuretime/10.0)
             if(window==1):
@@ -250,7 +258,7 @@ class Xspress3DS(Device, StandardDetector):
                     requested_data = self.streamer.instrument.window2_data_dtc[first-1:last]  
                 else:
                     requested_data = self.streamer.instrument.window2_data_raw[first-1:last]  
-            if len(requested_data)==last-first+1: # if we have the data we expect
+            if len(requested_data)==last-first+1 or self._stopped: # if we have the data we expect
                 read=True
 
         #print("Leave WHILE", len(requested_data), self.streamer.instrument.nframes_processed, first, last, last-first+1)
@@ -304,6 +312,7 @@ class Xspress3DS(Device, StandardDetector):
     @command
     def Arm(self):
         self.set_state(DevState.RUNNING)
+        self._stopped = False
         if self._write_hdf5 and self._destinationfilename:
             self.hdf_writer = WritingReceiver(host='localhost', port=self.StreamerPort, disposable=True)
             self.hdf_thread = Thread(target=self.hdf_writer.run)
@@ -329,8 +338,11 @@ class Xspress3DS(Device, StandardDetector):
         self.streamer.instrument.stop()
         self.streamer.q.put('stop')
         self.set_state(DevState.STANDBY)
+        self._stopped = True
 
     def always_executed_hook(self):
+        if self.get_state() == DevState.FAULT:
+            return
         if self.get_state() == DevState.RUNNING:
             # set the state back to standby when done
             done = self.streamer.instrument.nframes_processed
