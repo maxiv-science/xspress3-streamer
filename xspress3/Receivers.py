@@ -140,6 +140,10 @@ class LiveViewReceiver(object):
             frame = np.frombuffer(parts[1], dtype=meta['type']).reshape((m, n))
             plt.gca().clear()
             print(frame.shape)
+            rates = []
             for i, curve in enumerate(frame):
                 plt.plot(curve, label='%u'%i)
+                rates.append('ch%u: %.1e'%(i, curve.sum()/meta['exptime']))
+            plt.suptitle('; '.join(rates) + ' ph/s')
             plt.legend()
+
