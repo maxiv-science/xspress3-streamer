@@ -44,8 +44,11 @@ class Streamer(Thread):
                         filename = cmd.split()[1]
                         filename = '' if filename.lower()=='none' else filename
                         nframes = int(cmd.split()[2])
+                        overwritable = cmd.split()[3]
+                        overwritable = True if overwritable == 'True' else False
                         self.data_sock.send_json({'htype': 'header',
-                                             'filename': filename})
+                                             'filename': filename,
+                                             'overwritable': overwritable})
                         sent_frames = 0
                     elif cmd.startswith('stop'):
                         print('got the stop command!')

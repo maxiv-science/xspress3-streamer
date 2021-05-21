@@ -68,11 +68,13 @@ class WritingReceiver(DummyReceiver):
             if meta['htype'] == 'header':
                 self.print(meta)
                 fn = meta['filename']
+                ow = meta['overwritable']
                 if fn.lower() == 'none':
                     fn = ''
                 if fn:
-                    while os.path.exists(fn):
-                        fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
+                    if ow==False:  #if not overwritable then append a _
+                        while os.path.exists(fn):
+                            fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
                     fp = h5py.File(fn, 'w')
                 else:
                     self.print('Filename empty, not saving!')

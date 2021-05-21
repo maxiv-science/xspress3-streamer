@@ -28,6 +28,7 @@ class StandardDetector(object):
         self._latencytime = 0.
         self._triggermode = 'SOFTWARE'
         self._destinationfilename = '/tmp/temp.h5'
+        self._destinationfile_overwritable = False
         self._stopped = False
 
     @attribute(dtype=float, format='%e')
@@ -80,6 +81,13 @@ class StandardDetector(object):
     def DestinationFileName(self, val):
         self._destinationfilename = val
 
+    @attribute(dtype=bool)
+    def DestinationFileOverwritable(self):
+        return self._destinationfile_overwritable
+
+    @DestinationFileOverwritable.setter
+    def DestinationFileOverwritable(self, val):
+        self._destinationfile_overwritable = val
 
 class Xspress3DS(Device, StandardDetector):
     """
@@ -326,7 +334,7 @@ class Xspress3DS(Device, StandardDetector):
             trig_mode=self._triggermode,
             card=0,)
         dest = self._destinationfilename if self._destinationfilename else 'None'
-        self.streamer.q.put('start %s %u' % (dest, nframes))
+        self.streamer.q.put('start %s %u %s' % (dest, nframes, self._destinationfile_overwritable))
 
     @command
     def SoftwareTrigger(self):
