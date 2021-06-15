@@ -200,7 +200,7 @@ class Xspress3(object):
         print('Can fit %u frames' % fit_frames)
         trig_mode = trig_mode.lower()
         assert trig_mode in ('software', 'external_multi', 'external_multi_gate'), 'Invalid trigger mode!'
-        self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, n_frames))
+        self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, fit_frames))
         cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * 80e6)) # time in 80 MHz clock cycles
         if (n_trig != n_frames) and (n_trig != 1):
             raise AttributeError('nFramesPerTrigger can only be > 1 if nTriggers = 1')
