@@ -144,6 +144,7 @@ class LiveViewReceiver(object):
         import matplotlib.pyplot as plt
         plt.ion()
         fig = plt.figure()
+        first = True
         while True:
             plt.pause(self.delay)
             self.sock.send_string('give us a frame please!')
@@ -154,8 +155,21 @@ class LiveViewReceiver(object):
             m, n = meta['shape'][:2]
             print('***', meta, len(parts[1]))
             frame = np.frombuffer(parts[1], dtype=meta['type']).reshape((m, n))
-            plt.gca().clear()
+            #plt.gca().clear()
             print(frame.shape)
+            rates = []
+            if first:
+                lines = []
+                for i, curve in enumerate(frame):
+                    lines.append(plt.plot([], label='%u'%i)[0])
+                x = np.arange(len(curve))
+                plt.xlim(0, x.max())
+                plt.ylim(0, np.log10(curve[:-1].max())+1)
+                first = False
             for i, curve in enumerate(frame):
-                plt.plot(curve, label='%u'%i)
+                lines[i].set_data(x[:-1], np.log10(curve[:-1]))
+                rates.append('ch%u: %.1e'%(i, curve.sum()/meta['exptime']))
+            plt.draw()
+            plt.suptitle('; '.join(rates) + ' ph/s')
             plt.legend()
+
