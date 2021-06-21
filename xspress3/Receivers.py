@@ -100,7 +100,7 @@ class WritingReceiver(DummyReceiver):
                         #create datasets
                         for i, item in enumerate(extra):
                             print(i,item,type(item))
-                            d = fp.create_dataset(EXTRA[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype)
+                            d = fp.create_dataset(EXTRA[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype, chunks=(1,)+item.shape)
                             d[:] = item
                     else:
                         #expand datasets
