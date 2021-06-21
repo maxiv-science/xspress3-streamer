@@ -109,8 +109,10 @@ class Streamer(Thread):
 
                     # Now send extra data. We used to send as dict, which is easy for the receiver
                     # to interpret. Unfortunately pickling a dict took too much time, so now sending
-                    # as a list, which is faster but where the receiver has to know the order.
-                    self.data_sock.send_pyobj([ocr[0],AllEvents[0],AllGood[0],ClockTicks[0],TotalTicks[0],ResetTicks[0],np.asarray(event_widths),dtc[0]])
+                    # as a list, which is faster but where the receiver has to know the order. Forming
+                    # and sending the below list takes around 150 us.
+                    self.data_sock.send_pyobj([ocr[0], AllEvents[0], AllGood[0], ClockTicks[0],
+                                               TotalTicks[0], ResetTicks[0], event_widths, dtc[0]])
 
                     sent_frames += 1
                     sent_last_to_monitor = False
