@@ -8,6 +8,17 @@ import numpy as np
 import os, h5py
 import time
 
+# Extra data from the xspress3 comes as a list, with the following interpretation.
+EXTRA = ['output_count_rate',
+         'all_events',
+         'all_good',
+         'clock_ticks',
+         'total_ticks',
+         'reset_ticks',
+         'event_width',
+         'dead_time_correction',
+         'frame']
+
 class DummyReceiver(object):
     """
     Receiver which monitors the data PUB socket and just prints what
@@ -65,11 +76,13 @@ class WritingReceiver(DummyReceiver):
             if meta['htype'] == 'header':
                 self.print(meta)
                 fn = meta['filename']
+                ow = meta['overwritable']
                 if fn.lower() == 'none':
                     fn = ''
                 if fn:
-                    while os.path.exists(fn):
-                        fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
+                    if ow==False:  #if not overwritable then append a _
+                        while os.path.exists(fn):
+                            fn = fn.split('.')[0] + '_.' + fn.split('.', maxsplit=1)[-1]
                     fp = h5py.File(fn, 'w')
                 else:
                     self.print('Filename empty, not saving!')
@@ -81,20 +94,23 @@ class WritingReceiver(DummyReceiver):
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
                 extra = self.sock.recv_pyobj()
-                extra['frames'] = frame
+                extra.append(frame) # the actual data
                 if fn:
                     if meta['frame'] == 0:
                         #create datasets
-                        for name, arr in extra.items():
-                            d = fp.create_dataset(name, shape=(1,)+arr.shape, maxshape=(None,)+arr.shape, dtype=arr.dtype)
-                            d[:] = arr
+                        for i, item in enumerate(extra):
+                            print(i,item,type(item))
+                            d = fp.create_dataset(EXTRA[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype)
+                            d[:] = item
                     else:
+                        pass
+                        now=time.time()
                         #expand datasets
-                        for name, arr in extra.items():
-                            d = fp[name]
+                        for i, item in enumerate(extra):
+                            d = fp[EXTRA[i]]
                             old = d.shape[0]
                             d.resize((old+1,) + d.shape[1:])
-                            d[old:] = arr
+                            d[old:] = item
                 # print some output
                 if (time.time() - last_print) > 1.:
                     self.print('WritingReceiver: got %u new frames (total %u)'
