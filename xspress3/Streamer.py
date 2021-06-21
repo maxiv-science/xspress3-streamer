@@ -81,7 +81,6 @@ class Streamer(Thread):
                 if (available_frames > sent_frames) and not stopped:
                     # gather data
                     frame_info = {'starting_frame':sent_frames, 'n_frames':1}
-                    #frame_info = {'starting_frame':sent_frames, 'n_frames':available_frames-sent_frames}
 
                     data = self.instrument.read_hist_data(**frame_info)
                     # scalar data explicitly, plus event width
@@ -108,20 +107,9 @@ class Streamer(Thread):
                     self.instrument.clear_circular_buffer(**frame_info)
                     frames_since_last_print += 1
 
-                    now=time.time()
-                    # then send the additional scalar info
-                    # NB: This takes ~0.005s which limits the rate to < 200Hz if the pulling of data from the hw should keep up with triggering
-                    #self.data_sock.send_pyobj({'output_count_rate': ocr[0],
-                    #                           'all_events': AllEvents[0],
-                    #                           'all_good': AllGood[0],
-                    #                           'clock_ticks': ClockTicks[0],
-                    #                           'total_ticks': TotalTicks[0],
-                    #                           'reset_ticks': ResetTicks[0],
-                    #                           'event_width': event_widths,
-                    #                           'dead_time_correction': dtc[0]})
-
-                    # sending like this takes about 100us - but takes time to unpack if running receiver in same thread
-                    # Can run kHz with no receiver (ie no file saving) or receiver on separate machine
+                    # Now send extra data. We used to send as dict, which is easy for the receiver
+                    # to interpret. Unfortunately pickling a dict took too much time, so now sending
+                    # as a list, which is faster but where the receiver has to know the order.
                     self.data_sock.send_pyobj([ocr[0],AllEvents[0],AllGood[0],ClockTicks[0],TotalTicks[0],ResetTicks[0],np.asarray(event_widths),dtc[0]])
 
                     sent_frames += 1
@@ -129,7 +117,7 @@ class Streamer(Thread):
                     if sent_frames == nframes:
                         self.data_sock.send_json({'htype': 'series_end'})
                 else:
-                    time.sleep(.001) # pull data fast enough to keep up with return to Sardana?
+                    time.sleep(.001)
 
                 # maybe time to print some info
                 if (time.time() - last_print) >= 1.:

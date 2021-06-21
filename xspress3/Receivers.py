@@ -8,6 +8,17 @@ import numpy as np
 import os, h5py
 import time
 
+# Extra data from the xspress3 comes as a list, with the following interpretation.
+EXTRA = ['output_count_rate',
+         'all_events',
+         'all_good',
+         'clock_ticks',
+         'total_ticks',
+         'reset_ticks',
+         'event_width',
+         'dead_time_correction',
+         'frame']
+
 class DummyReceiver(object):
     """
     Receiver which monitors the data PUB socket and just prints what
@@ -34,7 +45,7 @@ class DummyReceiver(object):
                 buff = self.sock.recv()
                 m, n = meta['shape'][:2]
                 frame = np.frombuffer(buff, dtype=meta['type']).reshape((m, n))
-                #extra = self.sock.recv_pyobj()
+                extra = self.sock.recv_pyobj()
                 frames_since_last_print += 1
                 frames_total += 1
                 # print some output sometimes
@@ -55,9 +66,6 @@ class WritingReceiver(DummyReceiver):
     Receiver which reads from the data PUB socket and writes to hdf5.
     """
     def run(self):
-        # fields in extra data
-        names=['output_count_rate','all_events','all_good','clock_ticks','total_ticks','reset_ticks','event_width','dead_time_correction','frame']
-
         dsp = 'disposable' if self.disposable else 'persistent'
         self.print('%s writer running'%dsp)
         last_print = 0.
@@ -92,14 +100,14 @@ class WritingReceiver(DummyReceiver):
                         #create datasets
                         for i, item in enumerate(extra):
                             print(i,item,type(item))
-                            d = fp.create_dataset(names[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype)
+                            d = fp.create_dataset(EXTRA[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype)
                             d[:] = item
                     else:
                         pass
                         now=time.time()
                         #expand datasets
                         for i, item in enumerate(extra):
-                            d = fp[names[i]]
+                            d = fp[EXTRA[i]]
                             old = d.shape[0]
                             d.resize((old+1,) + d.shape[1:])
                             d[old:] = item
