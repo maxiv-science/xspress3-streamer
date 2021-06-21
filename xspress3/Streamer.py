@@ -45,7 +45,7 @@ class Streamer(Thread):
                         filename = '' if filename.lower()=='none' else filename
                         nframes = int(cmd.split()[2])
                         overwritable = cmd.split()[3]
-                        overwritable = True if overwritable == 'True' else False
+                        overwritable = True if overwritable.lower() == 'true' else False
                         self.data_sock.send_json({'htype': 'header',
                                              'filename': filename,
                                              'overwritable': overwritable})
@@ -150,7 +150,7 @@ if __name__ == '__main__':
     # take some frames and stream
     instr.acquire_frames(frame_time=.1, n_frames=100, n_trig=1)
     instr.soft_trigger()
-    s.q.put('start /data/staff/nanomax/alex_tmp/testfile.h5 100')
+    s.q.put('start /data/staff/nanomax/alex_tmp/testfile.h5 100 False')
     time.sleep(5)
     s.q.put('stop')
     s.q.put('kill')
