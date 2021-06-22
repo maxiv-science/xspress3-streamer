@@ -17,7 +17,7 @@ EXTRA = ['output_count_rate',
          'reset_ticks',
          'event_width',
          'dead_time_correction',
-         'frame']
+         'frames']
 
 class DummyReceiver(object):
     """
