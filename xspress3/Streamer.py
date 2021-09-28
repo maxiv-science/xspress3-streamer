@@ -29,17 +29,20 @@ class Streamer(Thread):
         killed = False
         sent_frames = 0
         stopped = True
+        ever_started = False
         sent_last_to_monitor = False
         data = np.zeros((2,2), dtype='uint32')
         last_print = 0.
         frames_since_last_print = 0
         nframes = 0
         while not killed:
+
             try:
                 # handle incoming commands - no block or timeout
                 try:
                     cmd = self.q.get(block=False)
                     if cmd.startswith('start'):
+                        ever_started = True
                         stopped = False
                         filename = cmd.split()[1]
                         filename = '' if filename.lower()=='none' else filename
@@ -77,7 +80,12 @@ class Streamer(Thread):
                         pass
 
                 # handle incoming data - only sleep if there's none
-                available_frames = self.instrument.nframes_processed
+                # For x3 mini, get error if you ask for the progress before arming!
+                if ever_started:
+                    available_frames = self.instrument.nframes_processed
+                else:
+                    available_frames = 0                    
+
                 if (available_frames > sent_frames) and not stopped:
                     # gather data
                     frame_info = {'starting_frame':sent_frames, 'n_frames':1}
