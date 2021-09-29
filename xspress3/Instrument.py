@@ -77,14 +77,28 @@ class Xspress3(object):
             self.XSP3_ITFG_GAP_MODE_500NS: 500e-9,
             self.XSP3_ITFG_GAP_MODE_1US: 1e-6,}[self._gap_mode]
 
+        GenEnum = ctypes.c_int
+        GenEnum = libxspress3.xsp3_get_generation(self.handle, 0)
+        self.isMINI=False
+        if GenEnum ==2:
+            self.isMINI = True
+
         self.check(libxspress3.xsp3_set_run_flags(self.handle,
                                 self.XSP3_RUN_FLAGS_HIST |
                                 self.XSP3_RUN_FLAGS_SCALERS |
                                 self.XSP3_RUN_FLAGS_CIRCULAR_BUFFER))
-        self.check(libxspress3.xsp3_clocks_setup(self.handle, 0, 
-                                self.XSP3_CLK_SRC_XTAL,
-                                self.XSP3_CLK_FLAGS_MASTER |
-                                self.XSP3_CLK_FLAGS_NO_DITHER, 0))
+
+        if self.isMINI == False:
+            self.check(libxspress3.xsp3_clocks_setup(self.handle, 0, 
+                                                     self.XSP3_CLK_SRC_XTAL,
+                                                     self.XSP3_CLK_FLAGS_MASTER | self.XSP3_CLK_FLAGS_NO_DITHER, 0))
+            
+        else:
+            self.check(libxspress3.xsp3_clocks_setup(self.handle, 0,
+                                                     self.XSP3M_CLK_SRC_CDCM61004, #as used in Lima
+                                                     self.XSP3_CLK_FLAGS_MASTER | self.XSP3_CLK_FLAGS_NO_DITHER, 0))
+
+
         self.check(libxspress3.xsp3_restore_settings(self.handle, config_path.encode('ascii'), 0))
         self._latest_exptime = None
 
@@ -196,12 +210,15 @@ class Xspress3(object):
         self.window2_data_dtc = []
 
         self._latest_exptime = frame_time - self._gap_time
-        fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12)
+        cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * 80e6)) # time in 80 MHz clock cycles
+
+        fit_frames = libxspress3.xsp3_format_run(self.handle, -1, 0, 0, 0, 0, 0, 12) 
         print('Can fit %u frames' % fit_frames)
+        self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, fit_frames))
+
         trig_mode = trig_mode.lower()
         assert trig_mode in ('software', 'external_multi', 'external_multi_gate'), 'Invalid trigger mode!'
-        self.check(libxspress3.xsp3_histogram_clear(self.handle, 0, self.num_chan, 0, fit_frames))
-        cycles = ctypes.c_uint32(int((frame_time - self._gap_time) * 80e6)) # time in 80 MHz clock cycles
+
         if (n_trig != n_frames) and (n_trig != 1):
             raise AttributeError('nFramesPerTrigger can only be > 1 if nTriggers = 1')
         if trig_mode == 'software':
@@ -209,7 +226,7 @@ class Xspress3(object):
                 trg_mode = self.XSP3_ITFG_TRIG_MODE_SOFTWARE_ONLY_FIRST
             elif n_trig == n_frames:
                 trg_mode = self.XSP3_ITFG_TRIG_MODE_SOFTWARE
-            self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL))
+            self.check(libxspress3.xsp3_set_glob_timeA(self.handle, card, self.XSP3_GTIMA_SRC_INTERNAL)) 
             self.check(libxspress3.xsp3_itfg_setup(self.handle, card, n_frames, cycles, trg_mode, self._gap_mode))
             self.check(libxspress3.xsp3_histogram_arm(self.handle, card)) # the manual says to call arm() here...
         elif trig_mode == 'external_multi':
