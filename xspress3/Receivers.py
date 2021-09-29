@@ -17,7 +17,7 @@ EXTRA = ['output_count_rate',
          'reset_ticks',
          'event_width',
          'dead_time_correction',
-         'frames']
+         'data']
 
 class DummyReceiver(object):
     """
@@ -97,15 +97,17 @@ class WritingReceiver(DummyReceiver):
                 extra.append(frame) # the actual data
                 if fn:
                     if meta['frame'] == 0:
-                        #create datasets
+                        #first frame, create datasets within a group.  ie one arm creates one file.
+                        group = fp.create_group('entry/instrument/xspress3')
+                        group.attrs["NX_class"]="NXdetector"
                         for i, item in enumerate(extra):
                             print(i,item,type(item))
-                            d = fp.create_dataset(EXTRA[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype, chunks=(1,)+item.shape)
+                            d = group.create_dataset(EXTRA[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype, chunks=(1,)+item.shape)
                             d[:] = item
                     else:
                         #expand datasets
                         for i, item in enumerate(extra):
-                            d = fp[EXTRA[i]]
+                            d = fp["entry/instrument/xspress3"][EXTRA[i]]
                             old = d.shape[0]
                             d.resize((old+1,) + d.shape[1:])
                             d[old] = item
