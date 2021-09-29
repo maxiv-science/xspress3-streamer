@@ -73,7 +73,7 @@ class StandardDetector(object):
         assert (val in valid), 'TriggerMode can be %s'%(' or '.join(valid))
         self._triggermode = val
 
-    @attribute(dtype=str)
+    @attribute(dtype=str, hw_memorized=True)
     def DestinationFileName(self):
         return self._destinationfilename
 
