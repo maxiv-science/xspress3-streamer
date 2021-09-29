@@ -24,7 +24,7 @@ Two zmq interfaces are presented. An efficient data socket which transfers raw d
 
 ## Data rates
 
-A quick test shows that the built-in writer thread (writing to the MAX IV storage over NFS) limits average data rates to around 500 Hz. Using a separate stream receiver process, frame rates were found to reach around 3.5 kHz (streaming to localhost), 1.7 kHz (streaming to the nanomax cc machine), and 750 Hz (streaming to the compute cluster). For the localhost case, rates are probably limited by pickling and memory copies. When streaming to the nanomax control machine, the observed rate roughly corresponds to that machine's 1 Gbit/s interface (1e9 bit/s / 32bit * 4096 * 4 ~ 1900 Hz). For the cluster case, who knows. All of this can be improved if needed.
+A quick test shows that the built-in writer thread (writing to the MAX IV storage over NFS) limits average data rates to around 200 Hz. Running on a MAX IV daq node, the rate can go up to 450 Hz, and is limited by resizing and writing the auxiliary datasets (count rate correction, etc). This should be improved.
 
 The Streamer as well as the WritingReceiver print acquisition information. With the Tango device writing its own hdf5 files, all this information can be seen by running the device manually in a terminal. In full streaming mode, the remote receiver will usually run in a terminal and print the monitoring information there.
 

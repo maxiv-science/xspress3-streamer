@@ -17,7 +17,7 @@ EXTRA = ['output_count_rate',
          'reset_ticks',
          'event_width',
          'dead_time_correction',
-         'frame']
+         'frames']
 
 class DummyReceiver(object):
     """
@@ -100,17 +100,15 @@ class WritingReceiver(DummyReceiver):
                         #create datasets
                         for i, item in enumerate(extra):
                             print(i,item,type(item))
-                            d = fp.create_dataset(EXTRA[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype)
+                            d = fp.create_dataset(EXTRA[i], shape=(1,)+item.shape, maxshape=(None,)+item.shape, dtype=item.dtype, chunks=(1,)+item.shape)
                             d[:] = item
                     else:
-                        pass
-                        now=time.time()
                         #expand datasets
                         for i, item in enumerate(extra):
                             d = fp[EXTRA[i]]
                             old = d.shape[0]
                             d.resize((old+1,) + d.shape[1:])
-                            d[old:] = item
+                            d[old] = item
                 # print some output
                 if (time.time() - last_print) > 1.:
                     self.print('WritingReceiver: got %u new frames (total %u)'
