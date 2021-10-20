@@ -30,7 +30,6 @@ class Streamer(Thread):
         sent_frames = 0
         stopped = True
         ever_started = False
-        sent_last_to_monitor = False
         data = np.zeros((2,2), dtype='uint32')
         last_print = 0.
         frames_since_last_print = 0
@@ -64,20 +63,18 @@ class Streamer(Thread):
                     pass
 
                 # check for requests on the monitor port
-                if not sent_last_to_monitor:
-                    try:
-                        msg = self.monitor_sock.recv_string(flags=zmq.NOBLOCK)
-                        sent_last_to_monitor = True
-                        print('Message on the monitoring port: "%s". Sending an image.' % msg)
-                        dct = {'htype': 'image',
-                               'exptime': self.instrument._latest_exptime,
-                               'frame': sent_frames,
-                               'type': 'uint32',
-                               'shape': (data.shape[1], data.shape[0])}
-                        self.monitor_sock.send_json(dct, flags=zmq.SNDMORE)
-                        self.monitor_sock.send(data)
-                    except zmq.ZMQError:
-                        pass
+                try:
+                    msg = self.monitor_sock.recv_string(flags=zmq.NOBLOCK)
+                    print('Message on the monitoring port: "%s". Sending an image.' % msg)
+                    dct = {'htype': 'image',
+                           'exptime': self.instrument._latest_exptime,
+                           'frame': sent_frames,
+                           'type': 'uint32',
+                           'shape': (data.shape[1], data.shape[0])}
+                    self.monitor_sock.send_json(dct, flags=zmq.SNDMORE)
+                    self.monitor_sock.send(data)
+                except zmq.ZMQError:
+                    pass
 
                 # handle incoming data - only sleep if there's none
                 # For x3 mini, get error if you ask for the progress before arming!
@@ -123,7 +120,6 @@ class Streamer(Thread):
                                                TotalTicks[0], ResetTicks[0], event_widths, dtc[0]])
 
                     sent_frames += 1
-                    sent_last_to_monitor = False
                     if sent_frames == nframes:
                         self.data_sock.send_json({'htype': 'series_end'})
                 else:
