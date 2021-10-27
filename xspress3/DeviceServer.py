@@ -306,6 +306,10 @@ class Xspress3DS(Device, StandardDetector):
     def nFramesAcquired(self):
         return self.streamer.instrument.nframes_processed
 
+    @attribute(dtype=int)
+    def nChannels(self):
+        return self.streamer.instrument.num_chan
+
     @attribute(dtype=bool)
     def ReadyForSwTrigger(self):
         if not self.get_state() == DevState.RUNNING:
