@@ -73,7 +73,7 @@ class StandardDetector(object):
         assert (val in valid), 'TriggerMode can be %s'%(' or '.join(valid))
         self._triggermode = val
 
-    @attribute(dtype=str)
+    @attribute(dtype=str, hw_memorized=True)
     def DestinationFileName(self):
         return self._destinationfilename
 
@@ -305,6 +305,10 @@ class Xspress3DS(Device, StandardDetector):
     @attribute(dtype=int)
     def nFramesAcquired(self):
         return self.streamer.instrument.nframes_processed
+
+    @attribute(dtype=int)
+    def nChannels(self):
+        return self.streamer.instrument.num_chan
 
     @attribute(dtype=bool)
     def ReadyForSwTrigger(self):
